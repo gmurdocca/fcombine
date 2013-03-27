@@ -27,7 +27,7 @@ if DEV_MODE:
 else:
     HOMEDIR = "/home"
 
-VERSION = "3.0"
+VERSION = "0.1"
 APPDIR = "/opt/fcombine/"
 KNOWN_HOSTS_FILE = APPDIR + "etc/xsftp/known_hosts"
 LICENSE_FILE = "/etc/xsftp/fcombine_subscriptions.key"
