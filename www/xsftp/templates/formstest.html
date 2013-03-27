@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load webui_tools %}
+{% block maincontent %}
+
+<form method= "post" action=".">
+<table>
+{{ testform.as_table }}
+</table>
+<input type="submit" value="Hi, I am a button.">
+</form>
+
+
+{% endblock %}

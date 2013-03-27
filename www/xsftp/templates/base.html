@@ -1,0 +1,125 @@
+{% load webui_tools %}
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+	<head>
+		<meta content="text/html; charset=ISO-8859-1" http-equiv="content-type">
+		<meta http-equiv="Content-Script-Type" content="text/javascript">
+		<meta name="robots" content="NONE,NOARCHIVE" />
+		<title>{{title}}</title>
+		<link rel="stylesheet" href="/media/xsftp/styles.css" type="text/css">
+
+		<!-- JS for button links -->
+		<script type="text/javascript">
+			function goToURL(url) { window.location = url; }
+			function goBackToURL(url) { goToURL(url); }
+		</script>
+
+		<!-- JavaScript includes -->
+		<script type="text/javascript" src="/media/xsftp/js/core.js"></script>
+		<script type="text/javascript" src="/media/xsftp/js/prototype.js"></script>
+		<script type="text/javascript" src="/media/xsftp/js/jscalendar/calendar.js"></script>
+		<script type="text/javascript" src="/media/xsftp/js/jscalendar/lang/calendar-en.js"></script>
+		<script type="text/javascript" src="/media/xsftp/js/jscalendar/calendar-setup.js"></script>
+		<script type="text/javascript" src="/media/xsftp/js/util.js"></script>
+		<link rel="stylesheet" href="/media/xsftp/js/jscalendar/skins/aqua/theme.css" type="text/css">
+
+		<!--[if lt IE 7]>
+		<style media="screen" type="text/css">
+		#container {
+			height:100%;
+		}
+		</style>
+		<![endif]-->
+	</head>
+
+	<body>
+		<div id="container">
+
+			<!-- Header -->
+			<div id="header">
+
+				<!-- banner -->
+				<div id="banner">
+					<img style="float: right;" alt="" src="/media/xsftp/banner.png">
+					<div style="clear:both;"></div>
+				</div>
+
+				<!-- tool bar -->
+				<div id="tools">
+					<div id="breadcrumbs">
+						{% for bc in breadCrumbs %}
+							{% if forloop.last %}
+								<span style="color: black">{{ bc.0 }}</span>
+							{% else %}
+								{% ifequal bc.0 "..." %}
+									<span style="color: black">{{ bc.0 }}</span>
+								{% else %}
+									<a class="tools_link" id="breadCrumb" href= "{{ bc.1 }}?back=1&bcid={{ bc.2 }}">{{ bc.0 }}</a> <font color="black"><b>&laquo;</b></font>
+								{% endifequal %}
+							{% endif %}
+						{% endfor %}
+					</div>
+					<div id="commands">
+						<span style="color: black">Welcome, {% if user.get_full_name  %}{{ user.get_full_name|escape }}{% else %}{{ user.username|escape }}{% endif %}</span> |
+						<span style="color: black">{{devicename}}</span>
+						{% if licenses.is_subscribed %}<span style="color: black">:: {{ licenses.organisation }}</span>{% endif %}
+						| <span style="color: black">{{current_date}}</span> |
+						<a class="tools_link" href="/dologout/">Logout</a>
+					</div>
+				</div>
+			</div>
+
+			<!-- webui body -->
+			<div id="body">
+
+				<!-- nav menu -->
+				<div id="nav">
+					{% if user.is_staff %}
+						<div id="adminnav">
+							<div class="navheading">Admin Menu</div>
+							{% for link in admin_links %}
+								<div class={% ifequal link.0 pageid %}"navselected"{% else %}"navunselected"{% endifequal %}>
+									<a class="navlink" href="{{ link.2 }}"><img class="navicon" src="/media/xsftp/icons/{{ link.0 }}.png" alt="" > {{ link.1 }}</a>
+								</div>
+							{% endfor %}
+						</div>
+					{% endif %}
+					<div id="normalnav">
+						<div class="navheading">Operator Menu</div>
+						{% for link in operator_links %}
+							<div class={% ifequal link.0 pageid %}"navselected"{% else %}"navunselected"{% endifequal %}>
+								<a class="navlink" href="{{ link.2 }}"><img class="navicon" src="/media/xsftp/icons/{{ link.0 }}.png" alt="" > {{ link.1 }}</a>
+							</div>
+						{% endfor %}
+					</div>
+				</div>
+
+				<!-- content -->
+				<div id="content">
+					<br></br>
+					{% for message in messages %}
+						<div class="{% message_class_lookup message.1 %}">{%if message.2%}{{ message.0|safe }}{% else %}{{ message.0 }}{% endif %}</div>
+					{% endfor %}
+					{% if prevBreadCrumb %}
+						<div>
+							<input type="button" value="&laquo; Back To {{ prevBreadCrumb.0 }}" onClick="goBackToURL('{{ prevBreadCrumb.1 }}?back=1&bcid={{ prevBreadCrumb.2 }}')">
+						</div>
+					{% endif %}
+					{% block maincontent %}
+					{% endblock %}
+				</div>
+
+			</div>
+
+			<!-- footer -->
+			<div id="footer">
+				<span><span style="color:black;">Fcombine</span> {% if eval_mode %}<span style="color: lightcoral;">Evaluation </span> - Version: {{xsftp_version}} </span>
+			</div>
+
+		</div>
+	<script type="text/javascript">
+		window.onresize = autoHeight;
+		window.onload = autoHeight;
+	</script>
+	</body>
+</html>

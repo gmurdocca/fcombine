@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript">
+
+function lhs_checked_items() {
+	return $$("input[id^=lhs_]").filter(new Function("e", "return e.checked"));
+}
+
+function lhs_selectall() {
+	items = $$("input[id^=lhs_]");
+	is_checked = $("selectall_lhs").checked;
+	for (i = 0; i < items.length; i++) {
+		items[i].checked = is_checked;
+	}
+}
+
+function rhs_checked_items() {
+	return $$("input[id^=rhs_]").filter(new Function("e", "return e.checked"));
+}
+
+function rhs_selectall() {
+	items = $$("input[id^=rhs_]");
+	is_checked = $("selectall_rhs").checked;
+	for (i = 0; i < items.length; i++) {
+		items[i].checked = is_checked;
+	}
+}
+
+function create_form(operation) {
+	the_form = document.createElement("form");
+	the_form.style.display = "none";
+	the_form.action = "/explorer/";
+	the_form.method = "POST";
+	add_input(the_form, "operation", operation);
+    add_input(the_form, "curr_dir", "{{curr_dir}}");
+	return the_form;
+}
+
+function add_input(the_form, the_name, the_value) {
+	i = document.createElement("input");
+	i.name = the_name;
+	i.value = the_value;
+	the_form.appendChild(i);
+}
+
+function chdir(dir) {
+    the_form = create_form("chdir");
+    add_input(the_form, "new_dir", dir);
+    document.body.appendChild(the_form);
+    the_form.submit();
+}
+
+function add() {
+	the_form = create_form("add");
+	items = lhs_checked_items();
+	for (i=0; i < items.length; i++) {
+		new_item = items[i].cloneNode(true);
+		new_item.id = "lhs_" + i;
+		the_form.appendChild(new_item);
+	}
+    document.body.appendChild(the_form);
+	// IE reverts checked status to false when appending form to document. Set to true.
+	checked_items = $$("form input[id^=lhs_]");
+	for (i=0; i < checked_items.length; i++) {
+		checked_items[i].checked = true;
+	}
+    the_form.submit();
+}
+
+
+function copy() {
+	the_form = create_form("copy");
+	items = rhs_checked_items();
+	for (i=0; i < items.length; i++) {
+		new_item = items[i].cloneNode(true);
+		new_item.id = "lhs_" + i;
+		the_form.appendChild(new_item);
+	}
+	document.body.appendChild(the_form);
+	// IE reverts checked status to false when appending form to document. Set to true.
+	checked_items = $$("form input[id^=rhs_]");
+	for (i=0; i < checked_items.length; i++) {
+		checked_items[i].checked = true;
+	}
+	the_form.submit();
+}
+
+function move() {
+
+}
+
+function clear_selected() {
+	the_form = create_form("clear");
+	items = rhs_checked_items();
+    for (i=0; i < items.length; i++) {
+        new_item = items[i].cloneNode(true);
+        new_item.id = "rhs_" + toString(i);
+        the_form.appendChild(new_item);
+    }
+	document.body.appendChild(the_form);
+	// IE reverts checked status to false when appending form to document. Set to true.
+	checked_items = $$("form input[id^=rhs_]");
+	for (i=0; i < checked_items.length; i++) {
+		checked_items[i].checked = true;
+	}
+    the_form.submit();
+}
+
+function delete_selected() {
+	the_form = create_form("delete");
+	items = lhs_checked_items();
+    for (i=0; i < items.length; i++) {
+        new_item = items[i].cloneNode(true);
+        new_item.id = "lhs_" + toString(i);
+        the_form.appendChild(new_item);
+    }
+	document.body.appendChild(the_form);
+	// IE reverts checked status to false when appending form to document. Set to true.
+	checked_items = $$("form input[id^=lhs_]");
+	for (i=0; i < checked_items.length; i++) {
+		checked_items[i].checked = true;
+	}
+    the_form.submit();
+}
+
+function getfile(filename) {
+    the_form = create_form("getfile");
+	input_node = document.createElement("input");
+	input_node.value = filename;
+	input_node.name = "filename";
+	the_form.appendChild(input_node);
+	document.body.appendChild(the_form);
+	the_form.submit();
+}
+
+function upload() {
+    the_form = create_form("upload");
+	document.body.appendChild(the_form);
+	the_form.submit();
+}
+
+//function rename() {
+//	the_form = create_form("add");
+//	items = lhs_checked_items();
+//	if (items.length != 1) {
+//		alert("Please select exactly one item to rename");
+//		return;
+//	}
+//	item = items[0].cloneNode(true);
+//	item.id = "lhs_" + "0";
+//	item.checked = true;
+//	the_form.appendChild(item);
+//  document.body.appendChild(the_form);
+//  the_form.submit();
+//}
+
+function mkdir() {
+	dir_name = prompt("New directory name");
+	if (dir_name != '' && dir_name != null) {
+		the_form = create_form("mkdir");
+		input_node = document.createElement("input");
+		input_node.value = dir_name;
+		input_node.name = "dir_name";
+		the_form.appendChild(input_node);
+		document.body.appendChild(the_form);
+		the_form.submit();
+	}
+}
+
+
+</script>
+<table class="explorer" id="id_explorer_table">
+	<tr>
+		<td>
+			<div class="explorer" id="explorer_lhs">
+				<table class="explorer">
+					<tr><td colspan="4"><a href="#" onClick="chdir('/')">File Explorer: </a>//{% for crumb in dir_trail %}<a href="#" onClick="chdir('{{crumb.1}}')">{{crumb.0}}</a>/{% endfor %}</td>
+						<td align="right">
+							{% if writeable %}
+								<img src="/media/xsftp/writable.png" alt="writable" title="You have read and write permissions at this location." />
+							{% else %}
+								<img src="/media/xsftp/writable_not.png" alt="not writable" title="You have read-only permissions at this location." />
+							{% endif %}
+						</td>
+					</tr>
+					<tr class="explorer_column_headers"><th><input type="checkbox" id="selectall_lhs" onClick="lhs_selectall()"></th><th></th><th>Name</th><th>Size</th><th>Modification Time</th></tr>
+					{% if not at_root %}<tr><td></td><td><img src="/media/xsftp/explorer_updir.png"></td><td><a href="#" onClick="chdir('..')">&lt;Parent Directory&gt;</a></td><td></td><td></td></tr>{% endif %}
+					{% for dir in dirs %}
+						<tr>
+							<td><input type="checkbox" name="lhs_selected" value="dir_{{dir.0}}" id="lhs_{{dir.0}}" onClick="$('selectall_lhs').checked = false"></td>
+							<td><img src="/media/xsftp/explorer_folder.png"></td>
+							<td><a href="#" onClick="chdir('{{dir.0}}')">{{dir.0}}</a></td>
+							<td style="color:grey;">&lt;dir&gt;</td>
+							<td>{{dir.2}}</td>
+						</tr>
+					{% endfor %}
+					{% for non_dir in non_dirs %}
+						<tr>
+							{% if not non_dir.3 %}
+								<td><input type="checkbox" name="lhs_selected" value="nondir_{{non_dir.0}}" id="lhs_{{non_dir.0}}" onClick="$('selectall_lhs').checked = false"></td>
+								<td><img src="/media/xsftp/explorer_file.png"></td>
+								<td><a href="#" onClick="getfile('{{non_dir.0}}')">{{non_dir.0}}</a></td>
+								<td>{{non_dir.1}}</td>
+								<td>{{non_dir.2}}</td>
+							{% else %}
+								<td></td>
+								<td><img src="/media/xsftp/explorer_file_warning.png"></td>
+								<td style="color: salmon;">{{non_dir.0}}</td>
+								<td colspan="2" style="color: salmon;">{{non_dir.3}}</td>
+							{% endif %}
+						</tr>
+					{% endfor %}
+				</table>
+			</div>
+		</td>
+		<td>
+			<div>
+				<p><input class="explorer_button_middle" type="button" value="tag &raquo;" onClick="add()"></p>
+				<p><input class="explorer_button_middle" type="button" value="&laquo; copy" onClick="copy()"></p>
+				<p><input class="explorer_button_middle" type="button" value="&laquo; move" onClick="move()"></p>
+			</div>
+		</td>
+		<td>
+			<div class="explorer" id="explorer_rhs">
+				<table class="explorer">
+					<tr><td colspan="3">Tagged Items</td></tr>
+					<tr class="explorer_column_headers">
+						<th style="width:1px;"><input type="checkbox" id="selectall_rhs" onClick="rhs_selectall()"></th>
+						<th style="width:1px;"></th>
+						<th>Name</th>
+					</tr>
+					{% for clipboard_item in clipboard_items %}
+						<tr>
+							<td><input type="checkbox" name="rhs_selected" value="{{clipboard_item}}" id="rhs_{{clipboard_item}}" onClick="$('selectall_rhs').checked = false"></td>
+							<td>
+							{% ifequal clipboard_item.type "nondir" %}
+								<img src="/media/xsftp/explorer_file.png">
+							{% else %}
+								<img src="/media/xsftp/explorer_folder.png">
+							{% endifequal %}
+							</td>
+							<td>{{clipboard_item}}</td>
+						</tr>
+					{% endfor %}
+				</table>
+			</div>
+		</td>
+	</tr>
+	<tr id="explorer_bottom">
+		<td style="vertical-align: middle;">
+			<input class="explorer_button_bottom" type="button" value="Upload ..." onClick="upload()">
+			<input class="explorer_button_bottom" type="button" value="Create Directory ..." onClick="mkdir()"><br/>
+			<input class="explorer_button_bottom" type="button" value="Delete ..." onClick="delete_selected()">
+			<input class="explorer_button_bottom" type="button" value="Rename ..." onClick="rename()"><br/></td>
+		<td>
+		</td>
+		<td id="id_explorer_rhs_buttons" align="right">
+			<input class="explorer_button_bottom" type="button" value="Clear Selected" onClick="clear_selected()">
+		</td>
+	</tr>
+</table>
+{% endblock %}
+

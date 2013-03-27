@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% load webui_tools %}
+{% block maincontent %}
+<br />
+<form>
+	<input type="button" value="Edit" onClick="goToURL('{{ action }}edit/{{ job_to_view.id }}/')">
+	<input type="button" value="Run Now" onClick="goToURL('{{ action }}run/{{ job_to_view.id }}/')">
+	<input type="button" value="Refresh" onClick="goToURL('{{ action }}view/{{ job_to_view.id }}/')">
+</form>
+<h3>View {% ifequal action "/jobs/" %}My {% endifequal %}Job: {{job_to_view.job_name}}</h3>
+<table>
+	<tr><td>&nbsp;</td><td><table>
+	<tr><td>Job Name:</td><td>{{job_to_view.job_name}}</td></tr>
+	{% ifequal action "/jobs/all/" %}
+	<tr>
+		<td>Job Owner:</td>
+		<td>
+			{% if job_to_view.owner.get_full_name %}{{job_to_view.owner.get_full_name}} ({{ job_to_view.owner.username }})
+			{% else %}{{ job_to_view.owner.username }}{% endif %}
+		</td>
+	</tr>
+	{% endifequal %}
+	<tr><td>Comment:</td><td>{{job_to_view.comment}}</td></tr>
+	<tr><td>Enabled:</td>
+		<td>
+			{% ifequal job_to_view.enabled 1 %}
+				<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="no" />
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Last Run:</td>
+		<td>
+			{% if job_to_view.last_run_time %}
+				{{job_to_view.last_run_time}}
+			{% else %}
+				Never
+			{% endif %}
+		</td>
+	</tr>
+	<tr>
+		<td>Running Now:</td>
+		<td>
+			{% ifequal job_to_view.running_now 1 %}
+				<table><tr>
+				<td style="vertical-align: middle;">Yes, this job started at {{ job_to_view.start_time }}</td><td><form><input type="button" value="Kill Job" onClick="goToURL('{{ action }}kill/{{ job_to_view.id }}/')"></form></td>
+				</tr></table>
+			{% else %}
+				{% ifequal job_to_view.running_now 0 %}
+					No
+				{% else %}
+					Terminating ...
+				{% endifequal %}
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Last Run Status:</td>
+		<td>
+			{% ifequal job_to_view.last_run_status 0 %}
+				<img src="/media/xsftp/icon-no.gif" alt="" /> Fail
+			{% else %}
+				{% ifequal job_to_view.last_run_status 1 %}
+					<img src="/media/xsftp/icon-yes.gif" alt="" /> Success
+				{% else %}
+					N/A
+				{% endifequal %}
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr>
+		<td>Last Run Message:</td>
+		<td>
+		{% if job_to_view.message %}
+			{{ job_to_view.message }}
+		{% else %}
+			None
+		{% endif %}
+		</td>
+	</tr>
+	<tr>
+		<td>Last Run Duration:</td>
+		<td>
+		{% if job_to_view.last_run_duration %}
+			{% duration_string job_to_view.last_run_duration %}	
+		{% else %}
+			N/A
+		{% endif %}
+		</td>
+	</tr>
+	<tr>
+		<td>Sanity:</td>
+		<td>
+			{% ifequal job_to_view.errorFlags 0 %}
+				<img src="/media/xsftp/icon-yes.gif" alt="Sane" /> This job is sane.
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="Insane" /> This job has the following errors:
+				<td>
+					{% for error in job_to_view.sanityStrings %}
+						- <font color="red">{{error}}</font><br>
+					{% endfor %}
+				</td>
+			{% endifequal %}
+		</td>
+	
+	</tr>
+	<tr>
+		<td>Last Seen Sane:</td>
+			<td>
+			{% if not job_to_view.timeLastSeenSane %}
+				Never
+			{% else %}
+				{{ job_to_view.timeLastSeenSane }}
+			{% endif %}
+		</td>
+	</tr>
+</table>
+</tr>
+<tr><td>
+<b>SCHEDULE DETAILS</b>
+</td>
+<td>
+<table>
+	<tr><td>Run Once:</td>
+		<td>
+			{% ifequal job_to_view.run_once 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Expiry:</td>
+		<td>
+			{% if job_to_view.expiry %}
+				{{ job_to_view.expiry }}
+			{% else %}
+				Never
+			{% endif %}
+		</td>
+	</tr>
+	<tr><td>Run Count:</td>
+		<td>
+			{% if not job_to_view.run_count %}
+				0
+			{% else %}
+				{{ job_to_view.run_count }}
+			{% endif %}
+		</td>
+	</tr>
+	<tr><td>Schedule Type:</td><td>{{ job_to_view.scheduleTypeString }}</td></tr>
+	<tr><td>Schedule:</td>
+		<td>
+			{{ job_to_view.scheduleString|safe}}
+		</td>
+	</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<b>TASK DETAILS</b>
+</td>
+<td>
+<table>
+	<tr><td>Source Server Link:</td>
+		<td>
+			{% if job_to_view.source_server %}
+				<a href="{{ serverlinksProcessor }}{{ job_to_view.source_server.id }}/">{{ job_to_view.source_server }}</a></td>
+			{% else %}
+				None
+			{% endif %}
+	</tr>
+	<tr><td>Source Files:</td><td><table>{% for glob in job_to_view.glob_set.all %}<tr><td>{{ glob }}</td></tr>{% endfor %}</table></td></tr>
+	<tr><td>Destination Server Link:</td>
+		<td>
+			{% if job_to_view.dest_server %}
+				<a href="{{ serverlinksProcessor }}{{ job_to_view.dest_server.id }}/">{{ job_to_view.dest_server }}</a>
+			{% else %}
+				None
+			{% endif %}
+		</td>
+	</tr>
+	<tr><td>Destination Path:</td><td>{{ job_to_view.dest_path }}</td></tr>
+	<tr><td>Delete Source?</td>
+		<td>
+			{% ifequal job_to_view.delete_source 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>If destination exists:</td><td>{{ job_to_view.existActionString }}</td></tr>
+	<tr><td>Continue on Error?</td>
+		<td>
+			{% ifequal job_to_view.continue_on_error 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	
+	<tr><td>Use Pre-Script:</td>
+		<td>
+			{% ifequal job_to_view.use_pre_script 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	{% ifequal job_to_view.use_pre_script 1 %}
+		<tr><td>Pre-Script:</td>
+			<td>
+				{% if job_to_view.pre_script %}
+					{% if is_staff %}
+						<a href="{{ scriptsProcessor }}{{ job_to_view.pre_script.id }}/">{{ job_to_view.pre_script }}</a>
+					{% else %}
+						{{ job_to_view.pre_script }}
+					{% endif %}
+				{% else %}
+					None
+				{% endif %}
+			</td>
+		</tr>
+	{% endifequal %}
+	<tr><td>Use Post-Script:</td>
+		<td>
+			{% ifequal job_to_view.use_post_script 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	{% ifequal job_to_view.use_post_script 1 %}
+		<tr>
+			<td>Post-Script:</td>
+			<td>
+				{% if job_to_view.post_script %}
+					{% if is_staff %}
+						<a href="{{ scriptsProcessor }}{{ job_to_view.post_script.id }}/">{{ job_to_view.post_script }}</a>
+					{% else %}
+						{{ job_to_view.post_script }}
+					{% endif %}
+				{% else %}
+					None
+				{% endif %}
+			</td>
+		</tr>
+	{% endifequal %}
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<b>ALERTING DETAILS</b>
+</td>
+<td>
+<table>
+	<tr><td>Alert Owner on Success:</td>
+		<td>
+			{% ifequal job_to_view.alert_owner_on_success 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Alert Owner on Fail:</td>
+		<td>
+			{% ifequal job_to_view.alert_owner_on_fail 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Suppress Group Alerts:</td>
+		<td>
+			{% ifequal job_to_view.suppress_group_alerts 1 %}
+				Yes
+			{% else %}
+				No
+			{% endifequal %}
+		</td>
+	</tr>
+	{% if not job_to_view.suppress_group_alerts %}
+	<tr><th>Alert Groups on Success:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td>{% if is_staff %}<td>Comment</td>{% endif %}</tr>
+				{% for group in job_to_view.alert_groups_on_success.all %}
+					<tr>
+						{% if is_staff %}
+							<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a></td>
+							<td>{{ group.comment }}</td>
+						{% else %}
+							<td>{{ group.group_name }}</td>
+						{% endif %}
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	<tr><th>Alert Groups on Failure:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td>{% if is_staff %}<td>Comment</td>{% endif %}</tr>
+				{% for group in job_to_view.alert_groups_on_fail.all %}
+					<tr>
+						{% if is_staff %}
+							<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a></td>
+							<td>{{ group.comment }}</td>
+						{% else %}
+							<td>{{ group.group_name }}</td>
+						{% endif %}
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	{% endif %}
+</table>
+</td>
+</tr>
+</table>
+{% endblock %}

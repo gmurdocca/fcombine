@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block maincontent %}
+
+<script type="text/javascript" src="/media/xsftp/js/jscalendar/attachCalendar.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/SelectBox.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/SelectFilter2.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/job.js"></script> 
+
+<h3>Add a New Job</h3><p>
+<form method= "post" action="/jobs/add/">
+<table>
+{% for field in new_job_form %}
+	{% ifequal field.label "Job Name" %}<tr><td><b style="color:green">&nbsp;</b></td><td><table>{% endifequal %}
+	{% ifequal field.label "Schedule type" %}</table></tr><tr><td><b style="color:green">Schedule Details</b></td><td><table>{% endifequal %}
+	{% ifequal field.label "Source Server Link" %}</table></tr><tr><td><b style="color:green">Task Details</b></td><td><table>{% endifequal %}
+	{% ifequal field.label "Alert me on Success" %}</table></tr><tr><td><b style="color:green">Alerting Details</b></td><td><table>{% endifequal %}
+    <tr><th>{{ field.label_tag }}</th><td>{% if field.errors %}{{ field.errors }}{% endif %}{{ field }}{% if field.help_text %}<br />{{ field.help_text }}{% endif %}</td></tr>
+	{% ifequal field.label "Source Server Link" %}
+		{% for glob_form in glob_forms %}			
+			<tr class="glob_row"><th>{{ glob_form.glob.label_tag }}</th><td>{% if glob_form.glob.errors %}{{ glob_form.glob.errors }}{% endif %}{{ glob_form.glob }}<a href="#"> <img border="0" alt="Delete Source Files" src="/media/xsftp/icon_del.gif" /></a><a href="#" onclick="addSourceGlobFields()"> <img border="0" alt="Add Source Files" src="/media/xsftp/icon_add.gif" /></a></td></tr>
+		{% endfor %}
+	{% endifequal %}
+	{% if forloop.last%}</table></td>{% endif %}
+{% endfor %}
+</table>
+<input type="submit" name="button" value="Add Job">
+<input type="submit" name="button" value="Cancel">
+</form>
+
+<script type="text/javascript">
+document.getElementById("id_job_name").focus();
+jobWindowLoadWrapper();
+</script>
+{% endblock %}
+
+
+

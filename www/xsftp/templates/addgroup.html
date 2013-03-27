@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Add a New Group</h3>
+<form method= "post" action="/groups/add/">
+	<table>
+		{{ newgroupform.as_table }}
+	</table>
+	<br />
+	<input type="submit" value="Add Group">
+</form>
+<script type="text/javascript">
+	document.getElementById("id_group_name").focus()
+</script>
+{% endblock %}

@@ -1,0 +1,637 @@
+#!/usr/bin/python
+############################################################################
+# shellmenu - Fcombine Shell Menu
+# ############################################
+#
+# Fcombine - An enterprise grade automounter and file server
+# Copyright (C) 2013 George Murdocca
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+import termios
+import fcntl
+import sys
+import os
+import re
+import pwd
+import subprocess
+import signal
+import socket
+import time
+import urllib
+import rpm
+from getpass import getpass
+
+VALID_IP_ADDRESS_PATTERN = re.compile(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b") # valid ip address
+VALID_FQDN_PATTERN = re.compile(r"(?=^.{1,254}$)(^(?:(?!\d+\.|-)[a-zA-Z0-9_\-]{1,63}(?<!-)\.?)+(?:[a-zA-Z]{2,})$)") # valid FQDN
+
+
+##############################################
+###        Utility Classes and Functions
+##############################################
+
+class TerminalController:
+    """
+    A class that can be used to portably generate formatted output to
+    a terminal.  
+    
+    `TerminalController` defines a set of instance variables whose
+    values are initialized to the control sequence necessary to
+    perform a given action.  These can be simply included in normal
+    output to the terminal:
+
+        >>> term = TerminalController()
+        >>> print 'This is '+term.GREEN+'green'+term.NORMAL
+
+    Alternatively, the `render()` method can used, which replaces
+    '${action}' with the string required to perform 'action':
+
+        >>> term = TerminalController()
+        >>> print term.render('This is ${GREEN}green${NORMAL}')
+
+    If the terminal doesn't support a given action, then the value of
+    the corresponding instance variable will be set to ''.  As a
+    result, the above code will still work on terminals that do not
+    support color, except that their output will not be colored.
+    Also, this means that you can test whether the terminal supports a
+    given action by simply testing the truth value of the
+    corresponding instance variable:
+
+        >>> term = TerminalController()
+        >>> if term.CLEAR_SCREEN:
+        ...     print 'This terminal supports clearning the screen.'
+
+    Finally, if the width and height of the terminal are known, then
+    they will be stored in the `COLS` and `LINES` attributes.
+    """
+    # Cursor movement:
+    BOL = ''             #: Move the cursor to the beginning of the line
+    UP = ''              #: Move the cursor up one line
+    DOWN = ''            #: Move the cursor down one line
+    LEFT = ''            #: Move the cursor left one char
+    RIGHT = ''           #: Move the cursor right one char
+
+    # Deletion:
+    CLEAR_SCREEN = ''    #: Clear the screen and move to home position
+    CLEAR_EOL = ''       #: Clear to the end of the line.
+    CLEAR_BOL = ''       #: Clear to the beginning of the line.
+    CLEAR_EOS = ''       #: Clear to the end of the screen
+
+    # Output modes:
+    BOLD = ''            #: Turn on bold mode
+    BLINK = ''           #: Turn on blink mode
+    DIM = ''             #: Turn on half-bright mode
+    REVERSE = ''         #: Turn on reverse-video mode
+    NORMAL = ''          #: Turn off all modes
+
+    # Cursor display:
+    HIDE_CURSOR = ''     #: Make the cursor invisible
+    SHOW_CURSOR = ''     #: Make the cursor visible
+
+    # Terminal size:
+    COLS = None          #: Width of the terminal (None for unknown)
+    LINES = None         #: Height of the terminal (None for unknown)
+
+    # Foreground colors:
+    BLACK = BLUE = GREEN = CYAN = RED = MAGENTA = YELLOW = WHITE = ''
+    
+    # Background colors:
+    BG_BLACK = BG_BLUE = BG_GREEN = BG_CYAN = ''
+    BG_RED = BG_MAGENTA = BG_YELLOW = BG_WHITE = ''
+    
+    _STRING_CAPABILITIES = """
+    BOL=cr UP=cuu1 DOWN=cud1 LEFT=cub1 RIGHT=cuf1
+    CLEAR_SCREEN=clear CLEAR_EOL=el CLEAR_BOL=el1 CLEAR_EOS=ed BOLD=bold
+    BLINK=blink DIM=dim REVERSE=rev UNDERLINE=smul NORMAL=sgr0
+    HIDE_CURSOR=cinvis SHOW_CURSOR=cnorm""".split()
+    _COLORS = """BLACK BLUE GREEN CYAN RED MAGENTA YELLOW WHITE""".split()
+    _ANSICOLORS = "BLACK RED GREEN YELLOW BLUE MAGENTA CYAN WHITE".split()
+
+    def __init__(self, term_stream=sys.stdout):
+        """
+        Create a `TerminalController` and initialize its attributes
+        with appropriate values for the current terminal.
+        `term_stream` is the stream that will be used for terminal
+        output; if this stream is not a tty, then the terminal is
+        assumed to be a dumb terminal (i.e., have no capabilities).
+        """
+        # Curses isn't available on all platforms
+        try: import curses
+        except: return
+
+        # If the stream isn't a tty, then assume it has no capabilities.
+        if not term_stream.isatty(): return
+
+        # Check the terminal type.  If we fail, then assume that the
+        # terminal has no capabilities.
+        try: curses.setupterm()
+        except: return
+
+        # Look up numeric capabilities.
+        self.COLS = curses.tigetnum('cols')
+        self.LINES = curses.tigetnum('lines')
+        
+        # Look up string capabilities.
+        for capability in self._STRING_CAPABILITIES:
+            (attrib, cap_name) = capability.split('=')
+            setattr(self, attrib, self._tigetstr(cap_name) or '')
+
+        # Colors
+        set_fg = self._tigetstr('setf')
+        if set_fg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, color, curses.tparm(set_fg, i) or '')
+        set_fg_ansi = self._tigetstr('setaf')
+        if set_fg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, color, curses.tparm(set_fg_ansi, i) or '')
+        set_bg = self._tigetstr('setb')
+        if set_bg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg, i) or '')
+        set_bg_ansi = self._tigetstr('setab')
+        if set_bg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg_ansi, i) or '')
+
+    def _tigetstr(self, cap_name):
+        # String capabilities can include "delays" of the form "$<2>".
+        # For any modern terminal, we should be able to just ignore
+        # these, so strip them out.
+        import curses
+        cap = curses.tigetstr(cap_name) or ''
+        return re.sub(r'\$<\d+>[/*]?', '', cap)
+
+    def render(self, template):
+        """
+        Replace each $-substitutions in the given template string with
+        the corresponding terminal control string (if it's defined) or
+        '' (if it's not).
+        """
+        return re.sub(r'\$\$|\${\w+}', self._render_sub, template)
+
+    def _render_sub(self, match):
+        s = match.group()
+        if s == '$$': return s
+        else: return getattr(self, s[2:-1])
+
+
+def select():
+    fd = sys.stdin.fileno()
+    oldterm = termios.tcgetattr(fd)
+    newattr = termios.tcgetattr(fd)
+    newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
+    termios.tcsetattr(fd, termios.TCSANOW, newattr)
+    oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
+    try:
+        while 1:
+            try:
+                c = sys.stdin.read(1)
+                selection = c
+                #print "You Selected ", selection
+                break
+            except IOError: pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
+        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+    return str(selection.lower())
+
+def getCurrentYumconfig():
+    # Get the current settings
+    f = file("/etc/yum.repos.d/fcombine.repo")
+    repo_lines = f.readlines()
+    f.close()
+    current_updates_username = current_updates_password = current_proxy_server = current_proxy_port = current_proxy_username = current_proxy_password = None
+    for line in repo_lines:
+        line = line.strip()
+        if line.startswith("baseurl") and line.find("@") != -1:
+            current_updates_username, current_updates_password = line[line.find("//")+2:line.find("@")].split(":")
+        if line.startswith("proxy="):
+            current_proxy_server_url = line[line.find("=")+1:]
+            if current_proxy_server_url:
+                c = current_proxy_server_url
+                current_proxy_server, current_proxy_port = c[c.find("//")+2:].split(":")
+            else:
+                current_proxy_server = None
+                current_proxy_port = None
+        if line.startswith("proxy_username"):
+            current_proxy_username = line[line.find("=")+1:]
+        if line.startswith("proxy_password"):
+            current_proxy_password = line[line.find("=")+1:]
+    return current_updates_username, current_updates_password, current_proxy_server, current_proxy_port, current_proxy_username, current_proxy_password
+
+
+def isPortFree(host, port):
+    '''Returns True if port is available, False if not'''
+    t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    t.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        t.bind((host, port))
+        t.close()
+        del t
+        return True
+    except socket.error:
+        del t
+        return False
+
+
+def strip_key(raw_pub_key):
+    '''
+    Returns public key cyphertext extracted from raw_pub_key.
+    '''
+    lines = raw_pub_key.split("\n")
+    newlines = []
+    for line in lines:
+        if line.startswith('Version') or line.startswith('-----BEGIN PGP PUBLIC KEY BLOCK-----'):
+            continue
+        line = line.replace("-----END PGP PUBLIC KEY BLOCK-----", "")
+        newlines.append(line.strip())
+    key = "".join(newlines)
+    return key
+
+
+def is_key_imported(filepath):
+    '''
+    Returns True if file specified by 'filepath' is an RPM GPG public key that has been imported into the system's RPM DB, otherwise returns False.
+    '''
+    f = open(filepath)
+    fkey = strip_key(f.read())
+    f.close()
+    ts = rpm.TransactionSet()
+    mi = ts.dbMatch()
+    mi.pattern('name', rpm.RPMMIRE_GLOB, 'gpg-pubkey*' )
+    for h in mi:
+        key = strip_key(h['description'])
+        if key == fkey:
+            return True
+    return False
+
+
+##############################################
+###                Menu System
+##############################################
+
+def menuMain():
+    print term.render('${CLEAR_SCREEN}')
+    while 1:
+        print
+        print term.render('${BG_BLUE}${YELLOW}${BOLD} ==  Fcombine Updates Manager  == ${NORMAL}')
+        print
+        print term.render("  ${WHITE}${BOLD}C${NORMAL}${BLUE}heck for updates")
+        print term.render("  C${WHITE}${BOLD}o${NORMAL}${BLUE}nfigure update settings")
+        print term.render("  ${WHITE}${BOLD}V${NORMAL}${BLUE}iew current update settings")
+        print term.render("  ${WHITE}${BOLD}R${NORMAL}${BLUE}oot shell")
+        print term.render("  Change root ${WHITE}${BOLD}p${NORMAL}${BLUE}assword")
+        print
+        print term.render("  E${WHITE}${BOLD}x${NORMAL}${BLUE}it")
+        print
+        print term.render('${GREEN}${BOLD}Select: '),
+        print term.render('${NORMAL}'),
+        while 1:
+            selection = select()
+            if selection == "c":    runUpdates(); break
+            if selection == "o":    configUpdates(); break
+            if selection == "v":    viewUpdateSettings(); break
+            if selection == "r":    rootShell(); break
+            if selection == "p":    chRootPass(); break
+            if selection == "x":    bye()
+
+def bye():
+    print term.render('${CLEAR_SCREEN}${NORMAL}Goodbye!')
+    sys.exit(0)
+
+def configUpdates():
+    print
+    print
+    doConfigUpdates()
+    return
+
+
+def runUpdates():
+    print term.render('${NORMAL}\n')
+    print term.render("${BOLD}Checking for Updates:${NORMAL}")
+    print
+    updates_username, updates_password, proxy_server, proxy_port, proxy_username, proxy_password = getCurrentYumconfig()
+    # if a web proxy has been specified
+    if proxy_server:
+        # we need to manually download the Fcombine GPG key and check if it has been imported.
+        # The version of yum on the Fcombine is inccapable of retrieving the key itself via a proxy server.
+        sys.stdout.write('Checking Fcombine GPG Public Key...')
+        sys.stdout.flush()
+        #print "Proxy Specified: Checking Fcombine GPG Public Key...",
+        proxy_creds = ""
+        if proxy_username:
+            proxy_creds = proxy_username
+            if proxy_password:
+                proxy_creds = proxy_creds + ":%s" % proxy_password
+            proxy_creds = proxy_creds + "@"
+        # generate a list of gpg key URL's specified in the yum config file
+        gpg_key_urls = []
+        f = open("/etc/yum.repos.d/fcombine.repo")
+        orig_repo_lines = f.readlines()
+        f.close()
+        for line in orig_repo_lines:
+            if line.startswith('gpgkey='):
+                # generate a list of tuples of the form ('gpgkey_url','path_to_downloaded_gpgkey_to')
+                gpg_key_url = line.split('=')[1]
+                if gpg_key_url not in [tuple[0] for tuple in gpg_key_urls]:
+                    gpg_key_urls.append( (gpg_key_url, "/tmp/pgpgkey_%s" % len(gpg_key_urls)))
+        # set the environment ver https_proxy appropriately for wget
+        os.environ['https_proxy'] = "https://%s%s:%s" % (proxy_creds, proxy_server, proxy_port)
+        rpm_import_commands = []
+        for url, path in gpg_key_urls:
+            wget_cmd = "wget -qO %s %s" % (path, url)
+            rc = os.system(wget_cmd)
+            if rc:
+                print "Failed.\nError: Could not reach the url: %s" % url
+                print "Please check your proxy settings and try again.\n"
+                print "Press any key to continue..."
+                select()
+                return
+            # if the key we just downloaded has not been imported into rpm
+            if not is_key_imported(path):
+                # mark it for import
+                rpm_import_commands.append("/bin/rpm --import %s" % path)
+        print "done"
+        print
+        # create new /etc/yum.repos.d/proxied-fcombine.repo (set each repo to disabled)
+        new_repo_lines = []
+        for line in orig_repo_lines:
+            line = line.strip()
+            if line.startswith("proxy="):
+                line = "proxy=https://127.0.0.1:31337"
+            elif line.startswith("proxy_username=") or line.startswith("proxy_password="):
+                continue
+            elif line.startswith("enabled="):
+                line = "enabled=0"
+            elif line == "[fcombine-updates-nonfree]":
+                line = "[proxied-fcombine-updates-nonfree]"
+            elif line == "[fcombine-updates]":
+                line = "[proxied-fcombine-updates]"
+            new_repo_lines.append(line)
+        new_repo_file = "\n".join(new_repo_lines)
+        f = open("/etc/yum.repos.d/proxied-fcombine.repo", "w")
+        f.write(new_repo_file)
+        f.close()
+        # make sure no one else is using the local proxytunnel daemon, ie. that they are not in the middle of updating this system
+        if not isPortFree("0.0.0.0", 31337):
+            print "Could not start the proxy agent. Someone else may currently be in the process of updating this system. Plese try again in a few minutes."
+            print "Press any key to continue..."
+            select()
+            return
+        # spawn /usr/bin/proxytunnel
+        p = subprocess.Popen(["/usr/bin/proxytunnel", "--standalone=31337", "--proxy=%s:%s" % (proxy_server, proxy_port), "--dest=www.fcombine.com:443", "--proxyauth=%s:%s" % (proxy_username, proxy_password)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # spawn yum --enablerepo [proxyied-repositories] --disbalerepo [non-proxied-repositories] update, and the rpm import command if required
+        rpm_import_command = " && ".join(rpm_import_commands)
+        if rpm_import_command: rpm_import_command += " && "
+        rc = os.system('echo -n "Please enter the Root "; su - -c "%syum --enablerepo=proxied-fcombine-updates,proxied-fcombine-updates-nonfree --disablerepo=fcombine-updates,fcombine-updates-nonfree update"' % rpm_import_command)
+        # terminate proxytunnel
+        os.kill(p.pid, signal.SIGINT)
+        p.wait()
+    else:
+        # no proxy specified - just yum update.
+        rc = os.system('echo -n "Please enter the Root "; su - -c "yum update"')
+    print
+    if rc:
+        print
+        print "There was an error while checking for updates. Please check the updates settings and try again."
+        print
+    return
+
+
+def chRootPass():
+    print term.render('${NORMAL}\n')
+    print term.render("${BOLD}Change root password:${NORMAL}")
+    print
+    os.system('echo -n "Please enter the Root "; su - -c "passwd root"')
+    print
+    return
+
+
+def rootShell():
+    print
+    print term.render("Type ${BOLD}exit${NORMAL} at the shell to return to this menu.")
+    print
+    os.system('echo -n "Please enter the Root "; su -')
+    print
+    return
+
+
+def viewUpdateSettings():
+    current_updates_username, current_updates_password, current_proxy_server, current_proxy_port, current_proxy_username, current_proxy_password = getCurrentYumconfig()
+    print
+    print
+    print term.render('${BOLD}Current Update Settings:${NORMAL}')
+    print
+    print term.render('${NORMAL}HTTP Proxy Server:\t\t${YELLOW}%s' % (current_proxy_server or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Port:\t\t${YELLOW}%s' % (current_proxy_port or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Username:\t\t${YELLOW}%s' % (current_proxy_username or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Password:\t\t<hidden>')
+    print term.render('${NORMAL}Fcombine Updates Username:\t${YELLOW}%s' % current_updates_username[13:])
+    print term.render('${NORMAL}Fcombine Updates Password:\t<hidden>')
+    print
+    print term.render("${BLUE}Press any key to return to menu...${NORMAL}")
+    select()
+    return
+
+
+##############################################
+###          Updates Setup block
+##############################################
+
+def doConfigUpdates():
+    print term.render('${BOLD}Configure Update Settings:${NORMAL}')
+    print
+    
+    # Get the current settings
+    current_updates_username, current_updates_password, current_proxy_server, current_proxy_port, current_proxy_username, current_proxy_password = getCurrentYumconfig()
+    
+    # Get settings from user
+    # proxy_server
+    invalid = True
+    while invalid:
+        proxy_server = raw_input("HTTP proxy server address (type 'none' for no proxy server) [%s]:" % (current_proxy_server or 'none'))
+        # validate
+        if proxy_server == '':
+            proxy_server = current_proxy_server
+            invalid = False
+        elif proxy_server.lower() == 'none':
+            proxy_server = None
+            invalid = False
+        elif proxy_server.find(".") == -1 or (not VALID_IP_ADDRESS_PATTERN.search(proxy_server) and not VALID_FQDN_PATTERN.search(proxy_server)):
+            print term.render("${RED}Please enter a valid IP address or fully qualified domain name${NORMAL}")
+        else:
+            invalid = False
+    if proxy_server:
+        # proxy port
+        invalid = True
+        while invalid:
+            proxy_port = raw_input("HTTP proxy port number%s:" % ({True:" [%s]"%current_proxy_port, False:""}[bool(current_proxy_port)]))
+            # validate
+            if proxy_port == '':
+                proxy_port = current_proxy_port
+                invalid = False
+            else:
+                try:
+                    proxy_port_int = int(proxy_port)
+                    if 0 < proxy_port_int < 65535:
+                        invalid = False
+                    else:
+                        raise ValueError
+                except ValueError, e:
+                    print  term.render("${RED}Please enter a valid port number${NORMAL}")
+        # proxy_username
+        invalid = True
+        while invalid:
+            proxy_username = raw_input("HTTP proxy username (type 'none' if proxy authentication is not required) [%s]:" % (current_proxy_username or 'none'))
+            # validate
+            if proxy_username == '':
+                proxy_username = current_proxy_username
+                invalid = False
+            elif proxy_username.find(" ") != -1:
+                print  term.render("${RED}Proxy username must not contain spaces${NORMAL}")
+            elif proxy_username.lower() == 'none':
+                proxy_username = None
+                invalid = False
+            elif len(proxy_username) > 64:
+                print term.render("${RED}Maximum proxy username length is 64 characters${NORMAL}")
+            else:
+                invalid = False
+        if proxy_username:
+            # proxy_password
+            invalid = True
+            while invalid:
+                proxy_password = getpass("HTTP Proxy password%s" % ({True:" (enter to leave as unchanged):", False:":"}[bool(current_proxy_password)]))
+                # validate
+                if proxy_password == '':
+                    proxy_password = current_proxy_password
+                    invalid = False
+                elif proxy_password.find(" ") != -1:
+                    print term.render("${RED}Proxy password must not contain spaces${NORMAL}")
+                elif len(proxy_password) > 64:
+                    print term.render("${RED}Maximum proxy password length is 64 characters${NORMAL)")
+                else:
+                    invalid = False
+        else:
+            proxy_password = None
+    else:
+        proxy_port = proxy_username = proxy_password = None
+    # updates_username
+    invalid = True
+    changed_updates_username = True
+    while invalid:
+        updates_username = raw_input("Fcombine Updates username [%s]:" % (current_updates_username or 'none'))
+        # validate
+        if updates_username == '':
+            updates_username = current_updates_username
+            changed_updates_username = False
+            invalid = False
+        elif len(updates_username) > 64:
+            print term.render("${RED}Maximum Fcombine Updates username length is 64 characters${NORMAL}")
+        elif updates_username.find(" ") != -1:
+            print term.render("${RED}Updates username must not contain spaces${NORMAL}")
+        else:
+            invalid = False
+    # updates_password
+    invalid = True
+    changed_updates_password = True
+    while invalid:
+        updates_password = getpass("Fcombine Updates password%s" % ({True:" (enter to leave as unchanged):", False:":"}[bool(current_updates_password)]))
+        # validate
+        if updates_password == '':
+            updates_password = current_updates_password
+            changed_updates_password = False
+            invalid = False
+        elif len(updates_password) > 64:
+            print term.render("${RED}Maximum Fcombine Updates password length is 64 characters${NORMAL}")
+        else:
+            invalid = False
+    
+    # Show the settings, get confirmation
+    print
+    print term.render('${BOLD}Confirm New Update Settings:${NORMAL}')
+    print
+    print term.render('${NORMAL}HTTP Proxy Server:\t\t${YELLOW}%s' % (proxy_server or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Port:\t\t${YELLOW}%s' % (proxy_port or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Username:\t\t${YELLOW}%s' % (proxy_username or '${NORMAL}<none>'))
+    print term.render('${NORMAL}HTTP Proxy Password:\t\t<hidden>')
+    print term.render('${NORMAL}Fcombine Updates Username:\t${YELLOW}%s' % updates_username)
+    print term.render('${NORMAL}Fcombine Updates Password:\t<hidden>')
+    print
+    print term.render("${GREEN}Save these settings (y/n)?${NORMAL}")
+    while 1:
+        selection = select()
+        if selection == "n":
+            print "Cancelled configure update settings."
+            return
+        if selection == "y": break
+    
+    # save the settings
+    print "Saving settings...",
+    proxy_server_string = proxy_username_string = proxy_password_string = ''
+    if changed_updates_username:
+        updates_username = urllib.quote(updates_username)
+    if changed_updates_password:
+        updates_password = urllib.quote(updates_password)
+    if proxy_server:
+        proxy_server_string = "proxy=http://%s:%s" % (proxy_server, proxy_port)
+        if proxy_username:
+            proxy_username_string = "proxy_username=%s" % proxy_username
+            proxy_password_string = "proxy_password=%s" % proxy_password
+    
+    repo_text = '''##### THIS FILE IS AUTOMATICALLY GENERATED BY FCOMBINE - DO NOT EDIT MANUALLY #####
+[fcombine-updates]
+name=Fcombine Updates - $releasever - $basearch
+baseurl=https://www.fcombine.com/yum/packages/$releasever/$basearch/updates/
+enabled=1
+gpgcheck=1
+gpgkey=https://www.fcombine.com/yum/FCOMBINE-GPG-KEY
+%(proxy_server)s
+%(proxy_username)s
+%(proxy_password)s
+
+[fcombine-updates-nonfree]
+name=Fcombine Updates-Nonfree - $releasever - $basearch
+baseurl=https://%(updates_userpass)s@www.fcombine.com/yum/packages/$releasever/$basearch/updates-nonfree/
+enabled=1
+gpgcheck=1
+gpgkey=https://www.fcombine.com/yum/FCOMBINE-GPG-KEY
+%(proxy_server)s
+%(proxy_username)s
+%(proxy_password)s
+''' % {    "proxy_server":proxy_server_string,
+    "proxy_username":proxy_username_string,
+    "proxy_password":proxy_password_string,
+    "updates_userpass": "%s:%s" % (updates_username, updates_password),
+    }
+    f = file("/etc/yum.repos.d/fcombine.repo", 'w')
+    f.write(repo_text)
+    f.close()
+    print "done."
+
+
+##############################################
+###                Main Block
+##############################################
+
+# get currently logged in linux user
+username = pwd.getpwuid(os.getuid())[0]
+# setup a TerminalController object
+term = TerminalController()
+# start the menu system
+menuMain()
+sys.exit()
+
+

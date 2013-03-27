@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/jscalendar/attachCalendar.js"></script>
+<h3>Edit User: {{user_to_edit.username}}</h3>
+<form method="POST" action="/users/edit/{{ user_to_edit.id }}/">
+	<table>
+		{{ edit_user_form.as_table }}
+	</table>
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+<script type="text/javascript">
+	document.getElementById('id_first_name').focus()
+</script>
+{% endblock %}

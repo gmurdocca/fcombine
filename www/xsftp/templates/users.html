@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% load webui_tools %}
+{% block maincontent %}
+<h3>Users</h3>
+<form method="get" action="">
+	<div>
+		<input type="button" class="alt" value="Add New User" onClick="goToURL('/users/add/')">
+	</div>
+</form>
+{% render_leet_table leet_table %}
+{% endblock %}

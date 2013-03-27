@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Edit SSH Key:</h3>
+<form method="POST" action="/mysshkeys/edit/{{ key_to_edit.id }}/">
+	<table>
+		<tr><th>SSH-2 Key Type</th><td>{{ key_to_edit.str_type }}<td></tr>
+		<tr><th>Bit Length</th><td>{{ key_to_edit.bit_length }}<td></tr>
+		<tr>
+			<th>Base64 Encoded Key</th>
+			<td>
+				{% for line in base64lines %}
+					{{ line }}<br/>
+				{% endfor %}
+			<td>
+		</tr>
+		<tr><th>Fingerprint</th><td>{{ key_to_edit.fingerprint }}<td></tr>
+		{% for field in edit_ssh_key_form %}
+			{% ifnotequal field.label "Fingerprint" %}
+				<tr><th>{{ field.label_tag }}</th><td>{% if field.errors %}{{ field.errors }}{% endif %}{{ field }}{% if field.help_text %}<br />{{ field.help_text }}{% endif %}</td></tr>
+			{% endifnotequal %}
+		{% endfor %}
+	</table>
+	<input type="hidden" name="fingerprint" value="{{ key_to_edit.fingerprint }}">
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+<script type="text/javascript">
+	document.getElementById('id_key_name').focus()
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/serverlink.js"></script>
+<h3>Add a New Server Link</h3>
+<form method= "post" action="/serverlinks/add/">
+	<table>
+		{{ new_server_form }}
+	</table>
+	<input type="submit" value="Add Server Link">
+</form>
+<script type="text/javascript">
+	document.getElementById("id_server_name").focus()
+	showType();
+</script>
+{% endblock %}

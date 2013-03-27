@@ -1,0 +1,4 @@
+#!/usr/bin/python
+import os, sys
+os.umask(000)
+os.execl('/opt/fcombine/bin/scp.vroot.real', '/opt/fcombine/bin/scp.vroot.real', *sys.argv[1:])

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load webui_tools %}
+{% block maincontent %}
+<h3>Subscriptions</h3>
+<br />
+{% if license.is_subscribed %}
+<table>
+	<tr><th>Subscriber:</th><td>{{license.username}}</td></tr>
+	<tr><th>Organisation:</th><td>{{license.organisation}}</td></tr>
+	<tr><th>Email:</th><td>{{license.email}}</td></tr>
+	<tr><th>Device Name:</th><td>{{license.devicename}}</td></tr>
+</table>
+<br />
+{% endif %}
+<form method="get" action="">
+    <div>
+        <input type="button" class="alt" value="Import Subscription File" onClick="goToURL('/subscriptions/import/')">
+    </div>
+</form>
+{% render_leet_table leet_table %}
+<br />
+<h3>Subscription Use Summary</h3>
+<table>
+	<tr>
+		<th>Subscription Type</th>
+		<th>Total Quantity</th>
+		<th>Used</th>
+		<th>Remaining</th>
+	</tr>
+	{% for type_tuple in summary %}
+	<tr>
+		<td>{{type_tuple.0}}</td>
+		<td>{{type_tuple.1}}</td>
+		<td>{{type_tuple.2}}</td>
+		<td>{{type_tuple.3}}</td>
+	</tr>
+	{% endfor %}
+</table>
+{% endblock %}

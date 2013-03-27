@@ -1,0 +1,370 @@
+/*###################  Style Sheet for Fcombine WebUI  ##################*/
+
+html, body { 
+	margin: 0;
+	padding: 0;
+	height: 100%; 
+	font-family: sans-serif;
+	font-size: 10pt;
+}
+
+#container {
+	min-height: 100%;
+	position: relative;
+}
+
+#nav {
+	float: left;
+	width: 12em;
+	background-color: #cbccdb;
+	height: 100%
+}
+
+#content {
+	margin-top: 0px;
+	margin-left: 12em;
+	background-color: white;
+	padding-left: 2em;
+	padding-right: .5em;
+	height: 100%;
+	background-image: url(/media/xsftp/basebodybg.png);
+	background-repeat: repeat-y;
+}
+
+
+#systemlog {
+	overflow: auto;
+	padding-right: 2em;
+}
+
+h2 { 
+	margin: 1em 0 0 0;
+	vertical-align: middle;
+	font-size: 11px;
+	padding: 2px 5px;
+	border-bottom: 1px solid #ddd; 
+	background-image: url(/media/xsftp/default-bg.gif);
+	background-position: bottom left;
+	color: black;
+}
+
+#body {
+	height: 100%;
+	padding-bottom:1.5em;   /* Height of the footer */
+}
+
+body.login {
+	background-color: white;
+}
+
+#footer {
+	position: absolute;
+	bottom: 0;
+	width: 100%;
+	height: 1.5em;   /* Height of the footer */
+	background-image: url(/media/xsftp/bar-bg.png);
+	background-repeat: repeat-x;
+	background-color: #c5cde9;
+	font-family: sans-serif;
+	font-size: 9pt;
+	color: dimgray;
+	text-align: center;
+}
+
+#loginfooter {
+	height: 1.5em;   /* Height of the footer */
+	background-image: url(/media/xsftp/bar-bg.png);
+	background-repeat: repeat-x;
+	background-color: #c5cde9;
+	font-family: sans-serif;
+	font-size: 9pt;
+	color: dimgray;
+	text-align: center;
+}
+
+#id_login_username, #id_login_password {
+	width: 15em;
+}
+
+div {
+	border: solid;
+	border-width: 0px;
+	border-color: black;
+	padding: 0px;
+}
+
+#banner {
+	background-color: #15203f;
+	overflow: hidden;
+}
+
+#tools {
+	height: 1.5em;
+	background-image: url(/media/xsftp/bar-bg.png);
+	background-repeat: repeat-x;
+	font-family: sans-serif;
+	font-size: 9pt;
+	color: dimgray;
+	padding-left: 1em;
+	padding-right: 1em;
+}
+
+#search {
+	background-image: url(/media/xsftp/default-bg.gif);
+	background-repeat: repeat-x;
+	background-color: #c5cde9;
+	font-family: sans-serif;
+	font-size: 9pt;
+	color: dimgray;
+	padding-left: 1em;
+	height:30px;
+}
+
+#breadcrumbs {
+	float: left;
+}
+
+#commands {
+	float: right;
+}
+
+#login {
+	width: 700px;
+	min-width: 700px;
+	margin-left: auto;
+	margin-right: auto;
+	margin-top: 100px;
+	background-color: snow;
+}
+
+#login_banner {
+}
+
+#login_body {
+	clear: both;
+	padding: 1em;
+}
+
+#login-form {
+	margin-left: 15em;
+}
+
+input[type=text], input[type=password], textarea, select, .vTextField { border:1px solid #ccc; }
+
+ 
+input[type=submit], input[type=button], .submit-row input { background:white url(/media/xsftp/button-bg.gif) bottom repeat-x; padding:3px; color:black; border:1px solid #bbb; border-color:#ddd #aaa #aaa #ddd; }
+input[type=submit]:active, input[type=button]:active { background-image:url(/media/xsftp/button-bg-reverse.gif); background-position:top; }
+
+input.alt, input[type=submit].default, .submit-row input.default { border:1px solid #5b80b2; background:#7CA0C7 url(/media/xsftp/default-bg.gif) bottom repeat-x; color:white; }
+input.alt:active, input[type=submit].default:active { background-image:url(/media/xsftp/default-bg-reverse.gif); background-position:top; }
+
+input[type=file] { border:0px solid; }
+
+/* LINKS */
+a:link, a:visited { color: #1a10b2; text-decoration:none; outline:0; }
+a:hover { color: #636; }
+a img { border:none; }
+
+a.tools_link {
+	text-decoration: none;
+	color: dimgray;
+}
+
+a.tools_link:hover {
+	text-decoration: underline;
+}
+
+
+/*##################################  NAV STYLES  ###############################*/
+
+a.navlink {
+	color: black;
+	font-family: sans-serif;
+	font-size: 9pt;
+	display: block;
+	text-decoration: none;
+	padding-left: 1em;
+}
+
+img.navicon {
+	vertical-align:middle;
+}
+
+a.navlink:hover {
+	background-color: #eceffb;
+}
+
+div.navheading {
+	font-weight:bold;
+	padding:12px 3px 2px 0px;
+	color: black;
+	font-size: 10pt;
+	font-family: sans-serif;
+	background-color: #cbccdb;
+	padding-left: 0.5em;
+}
+
+div.navselected {
+	font-size: 9pt; 
+	background-color: #f8fbc6;
+}
+
+div.navunselected {
+	background-color: #cbccdb;
+}
+
+
+/*##############################  MESSAGE STYLES  ##############################*/
+
+div.message_info {
+	border-width: 1px;
+	background-color: #B1FF5E;
+	border-color: #006600;
+	background:#A0FF9D url(/media/xsftp/icon_success.gif) 5px .3em no-repeat;
+}
+
+div.message_warning {
+	border-width: 1px;
+	background-color: #FFCC99;
+	border-color: #FF6600;
+	background:#fe9 url(/media/xsftp/icon_alert.gif) 5px .3em no-repeat;
+}
+
+div.message_critical {
+	border-width: 1px;
+	background-color: #FF9999;
+	border-color: #CC0000;
+	background:#f99 url(/media/xsftp/icon_error.gif) 5px .3em no-repeat;
+}
+
+div.message_debug {
+	border-width: 1px;
+	background-color: #AAAAAA;
+	border-color: #333333;
+}
+
+div.message_info, div.message_warning, div.message_critical, div.message_debug {
+	margin: 1em;
+	font-size: 10pt;
+	padding: 0.1em 0.1em 0.2em 25px;
+}
+
+/*############################### FORM ERROR STYLES ##############################*/
+
+ul.errorlist {
+	margin:0;
+	padding:0; 
+}
+
+.errorlist li {
+	font-size:10pt;
+	display:block;
+	padding:2px 3px 2px 1px;
+	margin:0 0 3px 0;
+	color:red;
+}
+
+td ul.errorlist{
+	margin:0;
+	padding:0;
+}
+
+td ul.errorlist li {
+	margin:0;
+}
+
+/* TABLES */
+
+table { border-collapse:collapse; border-color:#ccc; }
+td, th { font-size:11px; line-height:13px; border-bottom:1px solid #eee; vertical-align:top; padding:5px; font-family:"Lucida Grande", Verdana, Arial, sans-serif; }
+th { text-align:left; font-size:12px; font-weight:bold; }
+thead th,
+tfoot td { color:#666; padding:2px 5px; font-size:11px; background:#e1e1e1 url(/media/xsftp/nav-bg.gif) top left repeat-x; border-left:1px solid #ddd; border-bottom:1px solid #ddd; }
+tfoot td { border-bottom:none; border-top:1px solid #ddd; }
+thead th:first-child,
+tfoot td:first-child { border-left:none !important; }
+thead th.optional { font-weight:normal !important; }
+fieldset table { border-right:1px solid #eee; }
+tr.row-label td { font-size:9px; padding-top:2px; padding-bottom:0; border-bottom:none; color:#666; margin-top:-1px; }
+tr.alt { background:#d9d9d9; font-weight:bold; }
+.row1 { background:#EDF3FE; }
+.row2 { background:white; }
+
+/* SORTABLE TABLES */
+
+thead th a:link, thead th a:visited { color:#333; display:block; }
+table thead th.sorted { background-position:bottom left !important; }
+table thead th.sorted a { padding-right:13px; }
+table thead th.ascending a { background:url(/media/xsftp/arrow-down.gif) right .4em no-repeat; }
+table thead th.descending a { background:url(/media/xsftp/arrow-up.gif) right .4em no-repeat; }
+
+/* FILE EXPLORER INTERFACE  */
+
+div.explorer {overflow:visible; overflow-x: hidden; overflow-y:auto; border:solid; border-width:3px; border-style: ridge; border-color:lightgray;}
+table.explorer {min-width: 400px;}
+table.explorer td {vertical-align: middle;}
+table.explorer th {vertical-align: middle;}
+.explorer_button_middle {width:5em;}
+.explorer_button_bottom {width:12em;}
+#id_explorer_rhs_buttons {vertical-align: top;}
+tr.explorer_column_headers {
+	color:#666;
+	font-size:11px;
+	background:#e1e1e1 url(/media/xsftp/nav-bg.gif) top left repeat-x;
+}
+
+/* SELECTOR (FILTER INTERFACE) */ 
+
+.selector { width:380px; float:left; }
+.selector select { width:170px; height:13.2em; } .selector-available, .selector-chosen { float:left; width:170px; text-align:center; margin-bottom:5px; }
+.selector-available h2, .selector-chosen h2 { border:1px solid #ccc; }
+.selector .selector-available h2 { background:white url(/media/xsftp/nav-bg.gif) bottom left repeat-x; color:#666; }
+.selector .selector-filter { background:white; border:1px solid #ccc; border-width:0 1px; padding:3px; color:#999; font-size:10px; margin:0; text-align:left; }
+.selector .selector-chosen .selector-filter { padding:4px 5px; }
+.selector .selector-available input { width:130px; }
+.selector ul.selector-chooser { float:left; width:22px; height:50px; background:url(/media/xsftp/chooser-bg.gif) top center no-repeat; margin:8em 3px 0 3px; padding:0; }
+.selector-chooser li { margin:0; padding:3px; list-style-type:none; }
+.selector select { margin-bottom:5px; margin-top:0; }
+.selector-add, .selector-remove { width:16px; height:16px; display:block; text-indent:-3000px; }
+.selector-add { background:url(/media/xsftp/selector-add.gif) top center no-repeat; margin-bottom:2px; }
+.selector-remove { background:url(/media/xsftp/selector-remove.gif) top center no-repeat; }
+a.selector-chooseall, a.selector-clearall { display:block; width:6em; text-align:left; margin-left:auto; margin-right:auto; font-weight:bold; color:#666;  padding:3px 0 3px 18px; }
+a.selector-chooseall:hover, a.selector-clearall:hover { color:#036; }
+a.selector-chooseall { width:7em; background:url(/media/xsftp/selector-addall.gif) left center no-repeat; }
+a.selector-clearall { background:url(/media/xsftp/selector-removeall.gif) left center no-repeat; }
+
+
+/* SELECTOR (FILTER INTERFACE) */
+
+.selector { width:580px; float:left; }
+.selector select { width:270px; height:17.2em; }
+.selector-available, .selector-chosen { float:left; width:270px; text-align:center; margin-bottom:5px; }
+.selector-available h2, .selector-chosen h2 { border:1px solid #ccc; }
+.selector .selector-available h2 { background:white url(/media/xsftp/nav-bg.gif) bottom left repeat-x; color:#666; }
+.selector .selector-filter { background:white; border:1px solid #ccc; border-width:0 1px; padding:3px; color:#999; font-size:10px; margin:0; text-align:left; }
+.selector .selector-chosen .selector-filter { padding:4px 5px; }
+.selector .selector-available input { width:230px; }
+.selector ul.selector-chooser { float:left; width:22px; height:50px; background:url(/media/xsftp/chooser-bg.gif) top center no-repeat; margin:8em 3px 0 3px; padding:0; }
+.selector-chooser li { margin:0; padding:3px; list-style-type:none; }
+.selector select { margin-bottom:5px; margin-top:0; }
+.selector-add, .selector-remove { width:16px; height:16px; display:block; text-indent:-3000px; }
+.selector-add { background:url(/media/xsftp/selector-add.gif) top center no-repeat; margin-bottom:2px; }
+.selector-remove { background:url(/media/xsftp/selector-remove.gif) top center no-repeat; }
+a.selector-chooseall, a.selector-clearall { display:block; width:6em; text-align:left; margin-left:auto; margin-right:auto; font-weight:bold; color:#666;  padding:3px 0 3px 18px; }
+a.selector-chooseall:hover, a.selector-clearall:hover { color:#036; }
+a.selector-chooseall { width:7em; background:url(/media/xsftp/selector-addall.gif) left center no-repeat; }
+a.selector-clearall { background:url(/media/xsftp/selector-removeall.gif) left center no-repeat; }
+
+/* STACKED SELECTORS */
+
+.stacked { float:left; width:500px; }
+.stacked select { width:480px; height:10.1em; }
+.stacked .selector-available, .stacked .selector-chosen { width:480px; }
+.stacked .selector-available { margin-bottom:0; }
+.stacked .selector-available input { width:442px; }
+.stacked ul.selector-chooser { height:22px; width:50px; margin:0 0 3px 40%; background:url(/media/xsftp/chooser_stacked-bg.gif) top center no-repeat; }
+.stacked .selector-chooser li { float:left; padding:3px 3px 3px 5px; }
+.stacked .selector-chooseall, .stacked .selector-clearall { display:none; }
+.stacked .selector-add { background-image:url(/media/xsftp/selector_stacked-add.gif); }
+.stacked .selector-remove { background-image:url(/media/xsftp/selector_stacked-remove.gif); }
+

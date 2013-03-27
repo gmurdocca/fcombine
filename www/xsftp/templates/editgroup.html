@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/SelectBox.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/SelectFilter2.js"></script>
+<h3>Edit Group: {{group_to_edit.group_name}}</h3>
+<form method="POST" action="/groups/edit/{{ group_to_edit.id }}/">
+	<table>
+		{{ edit_group_form }}
+	</table>
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+<script type="text/javascript">
+	document.getElementById('id_group_name').focus();
+	addEvent(window, "load", function(e) { SelectFilter.init("id_users", "Users", 0, "/media/"); });
+</script>
+{% endblock %}

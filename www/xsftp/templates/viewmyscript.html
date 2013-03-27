@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Details for Script '{{ script_to_view|escape }}'</h3>
+<table>
+	<tr><td>Script Name:</td><td>{{script_to_view.script_name}}</td></tr>
+	<tr><td>Comment:</td><td>{{script_to_view.comment}}</td></tr>
+	<tr><td>File Name:</td><td>{{script_to_view.file}}</td></tr>
+</table>
+{% endblock %}

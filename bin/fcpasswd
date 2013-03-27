@@ -1,0 +1,75 @@
+#!/usr/bin/python
+############################################################################
+# fcpasswd - change a Fcombine user's password from the CLI
+# #########################################################
+#
+# Fcombine - An enterprise grade automounter and file server
+# Copyright (C) 2013 George Murdocca
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+
+import os
+import sys
+# Update the python path so we can import our django project
+sys.path.append("/opt/fcombine/www")
+os.environ["DJANGO_SETTINGS_MODULE"]="xsftp.settings"
+import xsftp.webui.models
+import getpass
+from xsftp.webui.views import setLinuxPassword
+
+def usage(rc):
+    print "Usage:\n%s <fcombine_username>" % sys.argv[0]
+    sys.exit(rc)
+
+def bail(rc=0, msg=None):
+    if msg:    print msg
+    sys.exit(rc)
+
+# ensure current user is root
+if os.getuid():
+    bail(1, "root privileges are required to run this program.")
+# get username from cli arg
+args = sys.argv[1:]
+if len(args) > 1:
+    print "Error: invalid option specified."
+    usage(1)
+elif len(args) == 0:
+    usage(1)
+# check fg user exists
+user = sys.argv[1]
+try:
+    xUser = xsftp.webui.models.User.objects.get(username=user)
+except Exception, e:
+    bail(1, "Error: Could not find Fcombine user '%s': %s" % (user, e))
+# cleck that user is a local user
+if not xUser.userprofile.internal_auth:
+    bail(1, "Error: Can't change password for non-local user '%s'" % user)
+# prompt for new password
+attempts = 1
+while True:
+    new_pass = getpass.getpass("Enter new password for user '%s':" % user)
+    confirm_new_pass = getpass.getpass("Retype new password for user '%s':" % user)
+    if new_pass != confirm_new_pass:
+        print "Sorry, passwords do not match."
+        attempts += 1
+    else:
+        break
+    if attempts > 3:
+        bail(1, "Error: Maximum number of retries exhausted.")
+# update password
+xUser.set_password(new_pass)
+xUser.save()
+setLinuxPassword(user, new_pass)
+print "Password changed."

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/SelectBox.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/SelectFilter2.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/jscalendar/attachCalendar.js"></script>
+<h3>Edit Configuration:</h3>
+<form method="POST" action="/configuration/edit/">
+	<table>
+		{{ edit_config_form.as_table }}
+	</table>
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+
+<script type="text/javascript">
+	document.getElementById('id_device_name').focus()
+	addEvent(window, "load", function(e) { SelectFilter.init("id_serverlink_alert_groups", "Groups", 0, "/media/"); });
+	addEvent(window, "load", function(e) { SelectFilter.init("id_job_success_alert_groups", "Groups", 0, "/media/"); });
+	addEvent(window, "load", function(e) { SelectFilter.init("id_job_failure_alert_groups", "Groups", 0, "/media/"); });
+</script>
+
+{% endblock %}

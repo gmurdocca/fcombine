@@ -1,0 +1,631 @@
+#!/usr/bin/python
+############################################################################
+# ImportUsers - Fcombine User Import and Sync Utility
+# ###################################################
+#
+# Fcombine - An enterprise grade automounter and file server
+# Copyright (C) 2013 George Murdocca
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+
+import os
+import sys
+import getopt
+import time
+import ldap
+import ldap.filter
+import sys
+import time
+import getpass
+import datetime
+import signal
+import fcntl
+from django.core.exceptions import ObjectDoesNotExist
+from django.contrib import auth
+# Update the python path so we can import our django project
+sys.path.append("/opt/fcombine/www")
+os.environ["DJANGO_SETTINGS_MODULE"]="xsftp.settings"
+from xsftp.webui.models import User, UserProfile, xGroup, dbCommit
+from xsftp.webui import forms, views
+import xsftp.webui.constants
+from xsftp.webui.forms import VALID_FQDN_PATTERN
+
+
+#############################
+##       Constants
+#############################
+
+PROG_NAME = "Fcombine User Import and Synchronization Utility v1.1"
+# LDAP Constants
+LDAP_SCOPE = ldap.SCOPE_SUBTREE
+LDAP_TIMEOUT = 3
+ATTRS_MAP = {   'sAMAccountName': 'username',
+                'givenName': 'firstname',
+                'sn': 'lastname',
+                'mail': 'email',
+                'userAccountControl': 'enabled',
+                'accountExpires': 'expiry',
+                'description': 'comment',
+            }
+# Set valid getopts names and default values
+settings = {'ad_username=':None, 'ad_domain_name=':None, 'ad_password=':None, 'ad_address=':None, 'ad_port=':None, 'ad_use_tls':False, 'ad_group=':None, 'source_file=':None, 'fg_group=':None, 'action=':'merge', 'quiet':False, 'help':False, 'dryrun':False}
+radius_users_file = xsftp.webui.constants.PAM_RADIUS_USERS
+# Set the name of the lockfile to check agaist if this program is already running
+LOCKFILE = "/tmp/lockfile_fcombine_importusers"
+
+#############################
+##       Functions
+#############################
+
+
+def title():
+    bar = "=" * len(PROG_NAME)
+    title = "%s\n%s\n%s" % (bar, PROG_NAME, bar)
+    return title
+
+
+def usage():
+    usage_text = '''Usage:
+    %s [option...]
+Options are:
+    --ad_domain_name=  Fully qualified domain name of an Active Directory domain from which to read
+                       users for import into the Fcombine.
+    --ad_username=     Username of an AD user with priveleges to read the AD schema. Can optionally
+                       include the fully qualified AD domain name, eg. "username@example.com".
+    --ad_password=     AD password for the above user. Can be entered interactively if ommited from
+                       the command line.
+    --ad_address=      An AD domain controller IP address or FQDN (FQDN must be resolvable).
+    --ad_port=         AD LDAP port (defaults to 389 for non-TLS and 636 for TLS).
+    --ad_use_tls       Use LDAP over TLS.
+    --ad_group=        AD Group name from which to enumerate users for import into the Fcombine.
+
+    --source_file=     A CSV file that contains a list of users for import into the Fcombine.
+                       If both an AD server and a CSV File are specified as user sources and a user
+                       collision is detected, the AD user will take precedence. The file must contain
+                       one user per line. Configurable attributes are the same as those that are
+                       available in the Fcombine web interface, and must be provided in the format:
+
+                         username,local,password,first_name,last_name,enabled,expiry,email,comment
+
+                       Empty lines and lines whose first non-white-space character is a "#" are
+                       ignored. Leading and trailing whitespace within each comma-delimited value is
+                       also ignored.
+
+                       All fields are optional except for 'username'. Users will be created as non-
+                       local, unless specified otherwise. 'enabled' and 'local' fields  must contain
+                       either 'true' or 'false'. 'expiry' field must be in the form 'YYYY-MM-DD'.
+                       Commas and backslashes located within field values must be escaped with a
+                       backslash. All included fields must conform to the same validation requirements
+                       as enforced by the Fcombine's web interface (see documentation for details).
+
+    --fg_group=        Optional name of a target Fcombine Group which all imported users will be made
+                       a member of. If a group is specified and does not exist, it will be
+                       automatically created.
+
+    --action=          Can be either:
+
+                       merge     - (Default) Merges attributes and group memberships (if specified) when
+                                   a specified user already exists on the Fcombine. Does not overwrite
+                                   attributes that are specified as empty. Also, creates a new user if
+                                   a specified user does not exist.
+                       newonly   - Will only create a new fcombine user if the specified user does not
+                                   already exist. Will not modify existing Fcombine users.
+    --dryrun           Perform a trial run with no changes made. 
+    --quiet            silent mode
+    --help             This help text
+''' % sys.argv[0]
+    print usage_text
+    sys.exit(1)
+
+
+def log(message=None):
+    if not settings['quiet'] and message:
+        print message
+
+
+def bail(message=None):
+    log(message)
+    sys.exit(1)
+
+
+def ldap_login(server, port, username, password, domain_name, use_tls=False):
+    if use_tls:
+        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+    try:
+        ldap_url = 'ldap%s://%s:%s' % ({True: "s", False: ""}[use_tls], server, port)
+        log("Attempting connection to AD Server at: %s" % ldap_url)
+        ldap_client = ldap.initialize(ldap_url)
+        ldap_client.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+        ldap_client.set_option(ldap.OPT_REFERRALS, 0)
+        # if username inclues a fully qualified domain name, use it verbatim
+        if "@" in username:
+            if not VALID_FQDN_PATTERN.search(username.split("@")[1]):
+                bail("Invalid Active Directory FQDN specified in username: %s" % username.split("@")[1])
+        else: #otherwise construct it
+            username = "%s@%s" % (username, domain_name)
+        ldap_client.simple_bind_s(username, password)
+    except Exception, e:
+        raise e
+    return ldap_client
+
+
+def get_ad_users(ad_dc_address, ad_dc_ldap_port, ad_domain_name, ad_use_tls, ad_group, ad_username, ad_password=None):
+    log("*** Enumerating Active Directory Users ***")
+    ldap_container = ",".join(["DC=%s" % part.upper() for part in ad_domain_name.split(".")])
+    ad_group = ldap.filter.escape_filter_chars(ad_group)
+    if not "." in ad_domain_name:
+        bail("Error: Malformed AD Domain Name")
+    # Establish connection to domain controller
+    try:
+        ldap_client = ldap_login(ad_dc_address, ad_dc_ldap_port, ad_username, ad_password, ad_domain_name, ad_use_tls)
+        log("Successfully logged in as user '%s'" % ad_username)
+    except ldap.INVALID_CREDENTIALS, e:
+            print "Error: Invalid AD login credentials or AD Domain Name"
+            sys.exit(1)
+    except ldap.SERVER_DOWN, e:
+            print "Error: The Active Directory LDAP service appears to be down."
+            sys.exit(1)
+    except ldap.LDAPError, e:
+        print "Error:",
+        print e.message['info'],":",
+        if type(e.message) == dict and e.message.has_key('desc'):
+            print e.message['desc']
+        else:
+            print e
+        sys.exit(1)
+    except Exception, e:
+            print "Error: %s" % e
+            sys.exit(1)
+    # Derive the group DN
+    filter = '(&(objectclass=Group)(CN=%s))' % ad_group
+    results = ldap_client.search_st(ldap_container, LDAP_SCOPE, filter, [''], LDAP_TIMEOUT)
+    result = None
+    if results:
+        result = [r for r in results if r[0]]
+    if not result:
+        print "Error: Specified AD Group '%s' not found." % ad_group
+        sys.exit(1)
+    ldap_group_dn = result[0][0]
+    # search for users in specified group
+    filter = '(&(objectclass=person)(memberOf=%s))' % ldap_group_dn
+    try:
+        results = ldap_client.search_st(ldap_container, LDAP_SCOPE, filterstr=filter, attrlist=ATTRS_MAP.keys(), attrsonly=False, timeout=LDAP_TIMEOUT)
+    except ldap.LDAPError, e:
+        print "Error:",
+        if type(e.message) == dict and e.message.has_key('info'):
+            print e.message['info'],":",
+        if type(e.message) == dict and e.message.has_key('desc'):
+            print e.message['desc']
+        else:
+            print e
+        sys.exit(1)
+    except Exception, e:
+            print "Error: %s" % e
+            sys.exit(1)
+    ldap_client.unbind()
+    result = None
+    if results:
+        result = [r for r in results if r[0]]
+    if not result:
+       log("Warning: No users found in specified AD group '%s'." % ad_group)
+    else:
+        log("Found %s users in AD group '%s'" % (len(result), ad_group))
+    # free up the memory holding the stored raw ldap data (?)
+    results = None
+    # Map results to Fcombine specific results
+    ad_users = {}
+    for ldap_user in result:
+        fg_attrs = {}
+        ad_attrs = ldap_user[1]
+        # flip the key:value pairs in the ad_attrs dict
+        for ad_key in ad_attrs:
+            fg_key = ATTRS_MAP[ad_key]
+            fg_attrs[fg_key] = ad_attrs[ad_key][0]
+        # Assign empty values to items that were not present in the AD results
+        for item in ATTRS_MAP.values():
+            if item not in fg_attrs:
+                fg_attrs[item] = ''
+            else:
+                # if value wasnt present but was None, set to empty string
+                if fg_attrs[item] == None:
+                    fg_attrs[item] = ''
+        # derive 'account enabled' status
+        if fg_attrs['enabled']:
+            mask = int(fg_attrs['enabled'])
+            pwr = 24
+            masklist = []
+            while mask:
+                while mask == mask % (2**pwr):
+                    pwr -= 1
+                masklist.append(2**pwr)
+                mask = mask % (2**pwr)
+            if 2 in masklist:
+                fg_attrs['enabled'] = False
+            else:
+                fg_attrs['enabled'] = True
+        # derive account expiry
+        expiry_val = int(fg_attrs['expiry'])
+        if expiry_val:
+            # convert windows time to epoc time
+            expiry_val = (expiry_val/10000000) - 11644473600 + 86400 # Add one day since windows uses "end of" and filgate uses "start of" for expiry dates
+            if not 0 < expiry_val < 2147483647: # ie the maximum 32 bit number, unix 2038 date limitation using 32 bit time value
+                fg_attrs['expiry'] = None
+            else:
+                # convert epoc time to the time string format expected by django
+                fg_attrs['expiry'] = time.strftime("%Y-%m-%d", time.gmtime(expiry_val))
+        else:
+            fg_attrs['expiry'] = None
+        # append results to final list if username is valid according to fcombine
+        if not forms.VALID_USERNAME_PATTERN.search(fg_attrs['username']):
+            log("Warning, AD username '%s' is of an incompatible format with Fcombine, skipping." % fg_attrs['username'])
+            continue
+        else:
+            ad_users[fg_attrs.pop('username')] = fg_attrs
+    # free up the memory holding the stored raw ldap data (?)
+    result = None
+    # append extra values
+    for key in ad_users:
+        ad_users[key]['source'] = "ad"
+        ad_users[key]['password'] = None
+        ad_users[key]['local'] = False
+    return ad_users
+
+
+def get_file_users(source_file):
+    log("*** Enumerating CSV File Users ***")
+    file_users = {}
+    try:
+        f = file(source_file, "r")
+    except Exception, e:
+        exit_fail("Error opening file: %s" % e)
+    lines = f.readlines()
+    f.close()
+    # process each line of the CSV file
+    users = []
+    count = 0
+    for line in lines:
+        count += 1
+        line = line.strip()
+        # store the line number at the start of each line for later reference
+        count_line = "%s," % count + line
+        # strip empty lines, leading and trailing whitespace, and comments:
+        if not line:
+            continue
+        if line.startswith("#"):
+            continue
+        if chr(254) in line or chr(255) in line:
+            log("Illegal character found on line %s, skipping..." % count)
+            continue
+        line = count_line
+        # replace escaped charaacters for re-replacement later
+        line = line.replace(r"\\", chr(254))
+        line = line.replace(r"\,", chr(255))
+        users.append(line)
+    if not users:
+        log("Warning: No users found in file '%s'." % source_file)
+    # parse lines for validity
+    for user in users:
+        raw_user_parts = user.split(",")
+        raw_user_parts = [item.strip() for item in raw_user_parts]
+        line_no = raw_user_parts[0]
+        if len(raw_user_parts) != 10:
+            log("Warning, line %s of file '%s'is incorrectly formed, skipping." % (line_no, source_file))
+            continue
+        # re-substitute escaped characters
+        user_parts = []
+        for item in raw_user_parts:
+            item = item.replace(chr(254), "\\")
+            item = item.replace(chr(255), ",")
+            user_parts.append(item)
+        # parse parts for validity
+        username = user_parts[1]
+        if not username:
+            log("Warning, line %s of file '%s' contains no username value, skipping." % (line_no, source_file))
+            continue
+        if not forms.VALID_USERNAME_PATTERN.search(username):
+            log("Warning, line %s of file '%s' contains invalid username '%s', skipping." % (line_no, source_file, username))
+            continue
+        if username in file_users:
+            log("Warning, line %s of file '%s' defines a user '%s' which was already defined earlier in the file. Using new values." % (line_no, source_file, username))
+        local = user_parts[2].lower()
+        if local:
+            if local not in ['true', 'false']:
+                log("Warning, line %s of file '%s' contains invalid value '%s' for field 'local', skipping." % (line_no, source_file, local))
+                continue
+            else: local = [False, True][local=='true']
+        else: local = False
+        password = user_parts[3] or None
+        first_name = user_parts[4] or ''
+        last_name = user_parts[5] or ''
+        enabled = user_parts[6].lower()
+        if enabled:
+            if enabled not in ['true', 'false']:
+                log("Warning, line %s of file '%s' contains invalid value '%s' for field 'enabled', skipping." % (line_no, source_file, enabled))
+                continue
+            else: enabled = [False, True][enabled=='true']
+        else: enabled = False
+        expiry = user_parts[7]
+        try:
+            if expiry:
+                datetime.datetime.strptime(expiry, "%Y-%m-%d")
+            else:
+                expiry = None
+        except ValueError, e:
+            log("Warning, line %s of file '%s' contains invalid value '%s' for field 'expiry', skipping." % (line_no, source_file, expiry))
+            continue
+        email = user_parts[8] or ''
+        if email and not forms.VALID_EMAIL_ADDRESS_PATTERN.search(email):
+            log("Warning, line %s of file '%s' contains invalid email address '%s', skipping." % (line_no, source_file, email))
+            continue
+        comment = user_parts[9] or ''
+        # populate a dict of users in form {user:{attrib:value,...}}
+        file_users[username] = {    'firstname':first_name,
+                                    'lastname':last_name,
+                                    'email':email,
+                                    'enabled':enabled,
+                                    'expiry':expiry,
+                                    'comment':comment,
+                                    'local':local,
+                                    'password':password,
+                                    'source':'file',
+                                }
+    log("Found %s users in CSV File '%s'" % (len(file_users), source_file))
+    return file_users
+
+
+def add_fg_user(user_name, user_attrs, merge=False):
+    if settings["dryrun"]:
+        return
+    # lazily ensure the radius_users file exists
+    os.system("touch %s" % radius_users_file)
+    os.system("chown root:apache %s" % radius_users_file)
+    os.system("chmod 775 %s" % radius_users_file)
+    if not merge:
+        user = auth.models.User()
+        userprofile = UserProfile()
+        userprofile.user = user
+        user.username = user_name
+        user.date_joined = time.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        user = auth.models.User.objects.get(username=user_name)
+        userprofile = user.userprofile
+    user.is_active = user_attrs['enabled']
+    user.first_name = user_attrs['firstname']
+    user.last_name = user_attrs['lastname']
+    user.email = user_attrs['email']
+    user.save()
+    userprofile.expiry = user_attrs['expiry']
+    userprofile.comment = user_attrs['comment']
+    userprofile.internal_auth = user_attrs['local']
+    userprofile.save(synchronise=False)
+    if userprofile.internal_auth:
+        if user_attrs['password']:
+            user.set_password(user_attrs['password'])
+            views.setLinuxPassword(user_name, user_attrs['password'])
+        else:
+            user.set_password(None)
+            rmPasswdCommand = "sudo %swww/xsftp/webui/privexec.py --erasepasswd=%s > /dev/null 2>&1 " % (xsftp.webui.constants.APPDIR, user_name)
+            os.system(rmPasswdCommand)
+    else:
+        # add user to radius_users file
+        f = file(radius_users_file,"r")
+        radius_users_file_lines = [u.strip() for u in f.readlines()]
+        f.close()
+        if user_name not in radius_users_file_lines:
+            f = file(radius_users_file, "a")
+            f.write("%s\n" % user_name)
+            f.close()
+        user.set_password(None)
+        rmPasswdCommand = "sudo %swww/xsftp/webui/privexec.py --erasepasswd=%s > /dev/null 2>&1 " % (xsftp.webui.constants.APPDIR, user_name)
+        os.system(rmPasswdCommand)
+    # add user to fg_group if necessary
+    fg_group = user_attrs['fg_group']
+    if fg_group:
+        group = xGroup.objects.get(group_name=fg_group)
+        group_users = list(group.users.all())
+        group_users.append(user)
+        group.users = group_users
+        group.save()
+
+
+def start_timer(n):
+    if not settings['quiet']:
+        sys.stdout.write("Committing changes (Ctrl-C to cancel) in")
+        for i in range(n, 0, -1):
+            sys.stdout.write(" %s" % i)
+            sys.stdout.flush()
+            time.sleep(1)
+        print
+            
+
+def handleSigInt(signal, frame):
+    bail("\nCtrl-C detected, quitting...")
+
+
+#############################
+##          Main
+#############################
+
+# start total runtime timer
+total_runtime = time.time()
+# ensure only one copy of this program is running
+try:
+   f = open(LOCKFILE, 'w')
+except Exception, e:
+   sys.stderr.write("Could not open lock file '%s' for writing: %s\n" % LOCKFILE)
+   sys.exit(1)
+try:    
+   fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except IOError:
+   sys.stderr.write("Another copy of this utility is currently running, terminating.\n")
+   sys.exit(1)
+
+# Register a handler for a SIGINT
+signal.signal(signal.SIGINT, handleSigInt)
+
+# read CLI input
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "", settings.keys())
+    if args:
+        raise getopt.GetoptError("argument '%s' not recognized" % args[0])
+except getopt.GetoptError, e:
+    print "Error: %s" % e
+    sys.exit(1)
+
+for key, value in opts:
+    key = key[2:]
+    if key not in settings:
+        key += "="
+    if key.find('=') != -1:
+        settings[key] = value or None
+    else:
+        settings[key] = value or True 
+
+# Check and sanitize arguments...
+ad_source = 'ad' in [pair[0][2:4] for pair in opts]
+file_source = settings['source_file=']
+if settings['help'] or not opts:
+    print title()
+    usage()
+    sys.exit()
+# check that either AD our a source_file has been specified as a source of users
+if not ad_source and not file_source:
+    bail('Error: Either an Active Directory server or a flat file must be specified as a source of users to import.')
+# ensure that if one AD arg is specified, all required ones are specified too
+required_ad_args = ['ad_username=', 'ad_domain_name=', 'ad_address=', 'ad_group=']
+if ad_source:
+    for arg in required_ad_args:
+        if not settings[arg]:
+            bail("Error: '%s' parameter required." % arg.replace("=",""))
+# set the ad_port appropriately if necessary
+if not settings['ad_port='] and settings['ad_use_tls']:
+    settings['ad_port='] = 636
+elif not settings['ad_port=']:
+    settings['ad_port='] = 389
+# sanitize fg_group, if specified:
+fg_group = settings['fg_group=']
+if fg_group and not (fg_group in [g.group_name for g in xGroup.objects.all()] or forms.VALID_GROUPNAME_PATTERN.search(fg_group)):
+    bail("Error: Specified target Fcombine group '%s' contains illegal characters." % fg_group)
+# sanitize the action option
+action = settings['action=']
+valid_action_args = ['merge', 'newonly']
+if action not in valid_action_args:
+    bail("Error: 'action' parameter incorrectly set to '%s'. It must specify one of: %s" % (action, ", ".join(valid_action_args)))
+# draw the title banner
+log(title())
+# if AD in in use, but no ad_password was set, and quiet mode was specified, bail
+if ad_source and settings["quiet"] and not settings['ad_password=']:
+    print "Error: Active Directory password must be supplied on the command line when using quiet mode."
+    bail()
+# if AD is in use and a password was not set on the CLI, then ask for one
+if ad_source and not settings['ad_password=']:
+    ad_password = None
+    while not ad_password:
+        ad_password = getpass.getpass("Please enter AD Password for user '%s':" % settings['ad_username='])
+        if not ad_password:
+            log("Warning: Active Directory password can not be blank, please re-enter.")
+    settings['ad_password='] = ad_password
+### Get users from specified sources
+import_users = {}
+# get users from CSV file if specified
+if file_source:
+    file_users = get_file_users(settings["source_file="])
+    import_users.update(file_users)
+# get users from AD if specified
+if ad_source:
+    ad_users = get_ad_users(settings['ad_address='], settings['ad_port='], settings['ad_domain_name='], settings['ad_use_tls'], settings['ad_group='], settings['ad_username='], settings['ad_password='])
+    for key in ad_users:
+        if key in import_users:
+            log("Warning: Found username '%s' specified in both AD and CSV File, AD user taking precedence." % key)
+    import_users.update(ad_users)
+# update any users with the fg_group
+for key in import_users:
+    import_users[key]['fg_group'] = settings['fg_group='] or None
+
+# Report to user about what is going to change,,,,
+log("Importing a total of %s users." % len(import_users))
+# extract user objects from fcombine who's usernames collide with our import list
+fcombine_users = User.objects.filter(username__in=import_users.keys())
+if fcombine_users:
+    log("Found %s existing Fcombine users with conflicting username: %s" % (len(fcombine_users), ", ".join([user.username for user in fcombine_users])))
+    if action == 'merge': action_string = 'merging conflicting users with existing Fcombine users.'
+    elif action == 'newonly': action_string = 'ignoring all conflicting users.'
+    else: action_string = 'overwriting existing Fcombine users.'
+    log("'action' set to '%s', %s" % (action, action_string))
+    # ensure the builtin admin account never gets clobbered/merged
+    for user in fcombine_users:
+        if user.id == 1:
+            bail("Error: %s user with username '%s' conflicts with builtin admin user." % (['AD', 'CSV File'][import_users[user.username]['source'] == 'file'], user.username))
+# process each import user
+log("*** Committing changes to Fcombine ***")
+# report which users are going to be added/modded
+mod_users = [user.username for user in fcombine_users]
+new_users = [user for user in import_users.keys() if user not in mod_users]
+log("Pending new user additions:")
+log(" %s" % (", ".join(new_users) or "None"))
+log("Pending existing user modifications:")
+if action == "newonly":
+    log(" None")
+else:
+    log(" %s" % (", ".join(mod_users) or "None"))
+# if there is nothing to do, bail.
+if not new_users and (action == "newonly" or not mod_users):
+    log("Nothing to do.")
+    sys.exit()
+# report if there will be a group modification
+new_group = False
+if fg_group:
+    if xGroup.objects.filter(group_name=fg_group):
+        log("Pending Fcombine group modification:")
+    else:
+        log("Pending Fcombine group creation:")
+        new_group = True
+    log(" " + fg_group)
+# report if this will be a dry run
+if settings["dryrun"]:
+    log("Dry run enabled, no changes will be made to the system.")
+start_timer(5)
+# WE ARE COMMITTING
+# create fg_group if needed
+if new_group and not settings['dryrun']:
+    newgroup = xGroup()
+    newgroup.group_name = fg_group
+    newgroup.created = time.strftime("%Y-%m-%d %H:%M:%S")
+    newgroup.comment = ""
+    newgroup.alertable = False
+    newgroup.save()
+for import_user in import_users:
+    import_user_attrs = import_users[import_user]
+    # if this user conflicts with an existing fcombine user
+    if import_user in [user.username for user in fcombine_users]:
+        for fcombine_user in fcombine_users:
+            if fcombine_user.username == import_user:
+                # honor the action
+                if action == "newonly":
+                    # ignore this user
+                    log("Ignoring conflicting user '%s' from %s..." % (import_user, ["CSV File", "Active Directory"][import_user_attrs['source'] == "ad"]))
+                    break
+                else: # action == "merge"...
+                    # merge this use with fcombine user
+                    log("Merging %s user '%s' with existing Fcombine user..." % (["CSV File", "Active Directory"][import_user_attrs['source'] == "ad"], import_user))
+                    add_fg_user(import_user, import_user_attrs, merge=True)
+                    break
+    else:
+        log("Adding new user '%s' from %s..." % (import_user, ["CSV File", "Active Directory"][import_user_attrs['source'] == "ad"]))
+        add_fg_user(import_user, import_user_attrs)
+if not settings["dryrun"]:
+    log("Committing changes to the system...")
+    dbCommit()
+log("Done, total run time (seconds): %s" % int(time.time() - total_runtime))

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<p>Are you sure you want to {{ action_description|lower }} the following {{ description }}?</p>
+<form method="post" action="/explorer/">
+	<ul>
+		{% for o in objects %}
+			<li>{{ o }}</li>
+			<input type="hidden" name="selected" value='{{ o }}'>
+		{% endfor %}
+	</ul>
+	<div>
+		<input type="hidden" name="operation" value="{{ operation }}">
+		<input type="hidden" name="curr_dir" value="{{ curr_dir }}">
+		<input type="submit" name="button" value="Yes">
+		<input type="submit" name="button" value="Cancel">
+	</div>
+</form>
+{% endblock %}

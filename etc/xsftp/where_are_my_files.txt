@@ -1,0 +1,12 @@
+Where are my files?
+===================
+
+Your connection to the endpoint server has not been correctly established.
+
+Automatic remediation of this issue is underway.
+
+If the problem is not resolved automatically within 30 minutes, an
+administrator of this Fcombine server will be alerted.
+
+You can resume use when the normal files appear instead of this
+message.

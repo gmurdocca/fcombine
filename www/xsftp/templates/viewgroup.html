@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Details for Group '{{ group_to_view|escape }}'</h3>
+<form>
+	<input type="button" value="Edit" onClick="goToURL('/groups/edit/{{ group_to_view.id }}/')">
+</form>
+<table>
+	<tr><td>Group Name:</td><td>{{group_to_view.group_name}}</td></tr>
+	<tr><td>Created:</td><td>{{group_to_view.created}}</td></tr>
+	<tr><td>Comment:</td><td>{{group_to_view.comment}}</td></tr>
+	<tr>
+		<td>Alertable:</td>
+		<td>
+			{% if group_to_view.alertable %}
+				Yes
+			{% else %}
+				No
+			{% endif %}
+		</td>
+	</tr>
+	<tr>
+		<td>Members:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td><td>Administrator</td></tr>
+				{% for user in users_in_group %}
+					<tr>
+						<td><a href="/users/view/{{ user.id }}/">{{ user.username }}</a></td>
+						<td>{{user.first_name}}</td>
+						<td>{{user.last_name}}</td>
+						<td>
+							{% ifequal user.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" >
+							{% endifequal %}
+						</td>
+						<td>
+							{% ifequal user.is_staff 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" >
+							{% endifequal %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+</table>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<p>Are you sure you want to generate a new SSH RSA key pair for yourself? If you have an existing key pair, it will be deleted.</p>
+<form method="post" action="/myprofile/generatekey/">
+	<div>
+		<input type="submit" name="button" value="Yes">
+		<input type="submit" name="button" value="Cancel">
+	</div>
+</form>
+{% endblock %}

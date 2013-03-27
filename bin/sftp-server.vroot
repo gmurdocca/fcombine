@@ -1,0 +1,21 @@
+#!/usr/bin/python
+import os
+import sys
+import pwd
+sys.path.append("/opt/fcombine/www")
+os.environ["DJANGO_SETTINGS_MODULE"]="xsftp.settings"
+import xsftp.webui.models
+
+def is_fcombine_user(username):
+    try:
+        xsftp.webui.models.User.objects.get(username=username)
+        return True
+    except xsftp.webui.models.User.DoesNotExist:
+        return False
+
+username = pwd.getpwuid(os.getuid())[0]
+if is_fcombine_user(username):
+    os.umask(000)
+    os.execl('/opt/fcombine/bin/sftp-server.vroot.real', '/opt/fcombine/bin/sftp-server.vroot.real', *sys.argv[1:])
+else:
+    os.execl('/usr/libexec/openssh/sftp-server', '/usr/libexec/openssh/sftp-server', *sys.argv[1:])

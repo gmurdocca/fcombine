@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<br />
+<h1 style="text-align: center; background-color: rgb(255, 0, 0);">WARNING:</h1>
+<h3 style="text-align: center;">
+	Are you sure you want to restart this system?<br />
+</h3>
+<p style="text-align: center;">
+	Currently active sessions, jobs and transfers will be terminated.<br />
+	Any jobs that are scheduled to start whilst the Fcombine is down will silently fail.<br />
+</p>
+<form method="post" action="/configuration/restart/">
+	<div style="background-color: rgb(255, 0, 0); text-align: center;">
+		<h2>
+			<input type="submit" name="button" value="Restart"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <input type="submit" name="button" value="Cancel">
+		</h2>
+	</div>
+</form>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>View My Server Link: {{server_to_view.server_name}}</h3>
+<table>
+	<tr><td>Server Link Name:</td><td><b>{{server_to_view.server_name}}</b></td></tr>
+	<tr><td>Comment:</td><td>{{server_to_view.comment}}</td></tr>
+	<tr><td>Effective Permission:</td><td>{{effectivePermission}}</td></tr>
+	<tr><td>Status:</td>
+		<td>
+			{% ifequal server_to_view.status 0%}
+				<img src="/media/xsftp/icon-yes.gif" alt="Healthy" /> Healthy
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="Unhealthy" /> Unhealthy
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Time Last Checked:</td>
+			<td>
+				{% if server_to_view.time_last_checked %}
+					{{server_to_view.time_last_checked}}
+				{% else %}
+					Never
+				{% endif %}
+			</td>
+	</tr>
+	<tr><td>Time Last Healthy:</td>
+			<td>
+				{% if server_to_view.timeLastSeenHealthy %}
+					{{server_to_view.timeLastSeenHealthy}}
+				{% else %}
+					Never
+				{% endif %}
+			</td>
+	</tr>
+	<tr><td>Enabled:</td>
+		<td>
+			{% ifequal server_to_view.enabled 1 %}
+				<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="no" />
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Created:</td><td>{{server_to_view.created}}</td></tr>
+	<tr><td>Address</td><td>{{server_to_view.address}}</td></tr>
+	<tr>
+		<td>Type:</td>
+		<td>
+			{% ifequal server_to_view.type "sftp" %}
+				SFTP (SSH File Transfer Protocol)
+			{% else %}
+				{% ifequal server_to_view.type "cifs" %}
+					CIFS (Windows Share)
+				{% else %}
+					{% if not server_to_view.ftp_ssl %}
+						FTP
+					{% else %}
+						{% if server_to_view.ftp_ssl_implicit %}
+							FTPS (Implicit FTP/SSL)
+						{% else %}
+							FTPES (Explicit FTP/SSL)
+						{% endif %}
+					{% endif %}
+				{% endifequal %}
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Comment:</td><td>{{server_to_view.comment}}</td></tr>
+</table>
+{% endblock %}

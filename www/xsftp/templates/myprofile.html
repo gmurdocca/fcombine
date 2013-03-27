@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>My Profile</h3>
+<table>
+	<tr><td>Username:</td><td>{{user_to_view.username}}</td></tr>
+	<tr><td>First Name:</td><td>{{user_to_view.first_name}}</td></tr>
+	<tr><td>Last Name:</td><td>{{user_to_view.last_name}}</td></tr>
+	<tr><td>Email Address:</td><td>{{user_to_view.email}}</td></tr>
+	<tr><th>Groups and Permissions</th>
+	<td>
+		<table>
+			<tr><td>Group Membership:</td>
+				<td>
+					{% if not users_groups %}None{% endif %}
+					{% for xGroup in users_groups %}
+						{{ xGroup.group_name }}{% if not forloop.last %},&nbsp;{% endif %}
+					{% endfor %}
+				</td>
+			</tr>
+			<tr><td>Scripts:</td>
+				<td>
+					{% if not users_scripts %}None{% endif %}
+					{% for script in users_scripts %}
+						{{ script.script_name }}{% if not forloop.last %},&nbsp;{% endif %}
+					{% endfor %}
+				</td>
+			</tr>
+			<tr><td>Read-Only Server Links:</td>
+				<td>
+					{% if not users_read_servers %}None{% endif %}
+					{% for read_server in users_read_servers %}
+						<a href=/myserverlinks/view/{{read_server.id}}/>{{ read_server.server_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+					{% endfor %}
+				</td>
+			</tr>
+			<tr><td>Read/Write Server Links:</td>
+				<td>
+					{% if not users_write_servers %}None{% endif %}
+					{% for write_server in users_write_servers %}
+						<a href=/myserverlinks/view/{{write_server.id}}/>{{ write_server.server_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+					{% endfor %}
+				</td>
+			</tr>
+		</table>
+	</td>
+</table>
+<form method=get action="">
+	<div>
+		<!-- <input type="button" value="Edit" onClick="goToURL('/myprofile/edit/')"> -->
+		{% if userprofile_to_view.internal_auth %}
+			<input type="button" value="Change Password" onClick="window.location = '/changemypass/'"><br/>
+		{% endif %}
+	</div>
+</form>
+{% endblock %}

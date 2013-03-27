@@ -1,0 +1,46 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+{% load webui_tools %}
+<html>
+	<head>
+		<link rel="StyleSheet" href="/media/xsftp/styles.css" type="text/css"/>
+		<title>Fcombine: Login</title>
+	</head>
+	<body class="login">
+		<div id="login">
+			<img id="login_banner" alt="" src="/media/xsftp/login_logo.png">
+			{% for message in messages %}
+				<div id="message" class="{% message_class_lookup message.1 %}">{{message.0}}</div>
+			{% endfor %}
+			<div id="login_body">
+				<form action="/dologin/" method="post" id="login-form">
+					<table>
+						<tr>
+							<th>Username:</th>
+							<td><input type="text" name="username" id="id_login_username" /></td>
+						</tr>
+						<tr>
+							<th>Password:</th>
+							<td><input type="password" name="password" id="id_login_password" /></td>
+						</tr>
+						<tr>
+							<td></td>
+							<td><input type="submit" value="Log in" /></td>
+						</tr>
+						<tr>
+							<th>Device Name:</th>
+							<td>{{device_name}}{% if license.is_subscribed %} :: {{license.organisation}}{% endif %}</td>
+						</tr>
+					</table>
+				</form>
+			</div>
+			<div id="loginfooter">
+				<span style="color: darkgrey;">
+					Fcombine <span style="color:grey;">Fcombine</span> v.{{xsftp_version}}<span style="color: grey;"> | </span>&copy; {{current_year}} Fcombine Pty Limited.
+				</span>
+			</div>
+		</div>
+		<script type="text/javascript">
+			document.getElementById('id_login_username').focus();
+		</script>
+	</body>
+</html>

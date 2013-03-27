@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Password Change</h3>
+<p>Please enter your old password, and then enter your new password twice for verification.</p>
+<form method= "POST" action="/changemypass/">
+	<table>
+		{{ myform.as_table }}
+	</table>
+	<input type="submit" name="button" value="Apply">
+	<input type="submit" name="button" value="Cancel">
+</form>
+{% endblock %}
+
+

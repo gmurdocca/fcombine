@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/user.js"></script> 
+<h3>Add a New User</h3>
+<form method= "post" action="/users/add/">
+	<table>
+		{{ newuserform.as_table }}
+	</table>
+	<input type="submit" value="Add User">
+</form>
+<script type="text/javascript">
+	document.getElementById("id_username").focus()
+	showPasswordFields();
+</script>
+{% endblock %}

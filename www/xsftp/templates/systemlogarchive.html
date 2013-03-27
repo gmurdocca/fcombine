@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>System Log Archive</h3>
+<br/>
+<table>
+	<tr>
+		<th>Log File</th>
+		<th>Last Modified</th>
+		<th>File Size</th>
+	</tr>
+		{% for logfile in logfiles %}
+			<tr>
+				<td>
+					<a href="/systemlog/archive/{{logfile.0}}/">{{logfile.0}}</a>
+				</td>
+				<td>{{logfile.1}}</td>
+				<td>{{logfile.2}}</td>
+			</tr>
+		{% endfor %}
+</table>
+{% endblock %}

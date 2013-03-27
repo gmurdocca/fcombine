@@ -1,0 +1,118 @@
+#!/usr/bin/python
+############################################################################
+# fxsh - The xSFTP Daemon
+# ############################################
+#
+# Fcombine - An enterprise grade automounter and file server
+# Copyright (C) 2013 George Murdocca
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+
+import os
+import sys
+import getopt
+import signal
+import logging
+
+if "DJANGO_SETTINGS_MODULE" not in os.environ:
+    # we're not running in the init script 
+    os.environ["DJANGO_SETTINGS_MODULE"] = "xsftp.settings"
+
+sys.path.append("www") #FIXME
+sys.path.append("/opt/fcombine/www") #FIXME
+
+import xsftp.common.constants
+from xsftp.common.Config import config
+from xsftp.common.Daemon import Daemon
+from xsftp.daemon.FcombineDaemon import FcombineDaemon
+
+class ParamikoLogHandler(object):
+    #TODO: this has not been tested yet
+    def __init__(self, f):
+        self.f = f
+
+class Main(Daemon):
+    def __init__(self):
+        Daemon.__init__(self, "/var/run/xsftpd.pid", syslog_name="xsftp")
+
+    def pre_fork(self):
+        if os.getuid() != 0:
+            sys.stderr.write("This program needs to run as root\n")
+            sys.exit(1)
+    
+        conf_file = xsftp.common.constants.DEFAULT_CONF_FILE
+
+        try:
+            opts, args = getopt.getopt(sys.argv[1:], "n", ["help"])
+        except getopt.GetoptError, e:
+            print "Error: %s" % e
+            print
+            self.usage()
+            sys.exit(-1)
+
+        for o, a in opts:
+            if o == "-n":
+                self.daemonise = False
+            if o == "--help":
+                self.usage()
+                sys.exit()
+
+        if args and len(args) != 1:
+            self.usage()
+            sys.exit(1)
+        elif args:
+            conf_file = args[0]
+
+        # Check Conf File Exists
+        if not os.path.isfile(conf_file):
+            sys.stderr.write('\nError: xSFTP config file (%s) not found!\n' %
+                    conf_file)
+            sys.exit(1)
+
+        # read in the config
+        config.read_config(conf_file)
+
+
+    def main(self):
+        # setup paramiko library's log output
+        if config.DEBUG == 1:
+            plogger = ParamikoLogHandler(sys.stdout)
+            logging.getLogger("paramiko").addHandler(plogger)
+
+        """Run the main fcombine program"""
+        fcombine = FcombineDaemon()
+        fcombine.main()
+
+
+    def usage(self):
+        # This appears if invalid CLI arg is passed.
+        # No args is valid and uses /etc/xsftp/xsftpd.conf as the config file
+        # location
+        print "============================"
+        print "xSFTP Daemon Version %s" % xsftp.common.constants.VERSION
+        print "============================"
+
+        print "Usage:"
+        print "xsftpd [options] [config-file]"
+        print "-n               Do not daemonise, and write log to standard"
+        print "output."
+        print "--help           This help text."
+        print "config-file      The path to the xSFTP configuration file."
+        print "Defaults to /etc/xsftp/xsftpd.conf if none specified"
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    Main().run()

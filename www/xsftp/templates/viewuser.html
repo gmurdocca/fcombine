@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Details for User '{{ user_to_view|escape }}'</h3>
+<table>
+<tr><td>Username:</td><td>{{user_to_view.username}}</td></tr>
+{% if show_demo_status %}
+	<tr>
+		<td>Demo User:</td>
+		<td>
+				{% if user_profile_to_view.is_demo_user%}
+					Yes
+				{% else %}
+					No
+				{% endif %}
+		</td>
+	</tr>
+{% endif %}
+<tr>
+	<td>Local Account:</td>
+	<td>
+		{% if user_profile_to_view.internal_auth%}
+			Yes
+		{% else %}
+			No
+		{% endif %}
+	</td>
+</tr>
+<tr><td>First Name:</td><td>{{user_to_view.first_name}}</td></tr>
+<tr><td>Last Name:</td><td>{{user_to_view.last_name}}</td></tr>
+<tr><td>Email Address:</td><td>{{user_to_view.email}}</td></tr>
+<tr>
+	<td>Administrator:</td>
+	<td>
+		{% ifequal user_to_view.is_staff 1 %}
+			<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+		{% else %}
+			<img src="/media/xsftp/icon-no.gif" alt="no" >
+		{% endifequal %}
+	</td>
+</tr>
+<tr>
+	<td>Enabled:</td>
+	<td>
+		{% ifequal user_to_view.is_active 1 %}
+			<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+		{% else %}
+			<img src="/media/xsftp/icon-no.gif" alt="no" >
+		{% endifequal %}
+	</td>
+</tr>
+<tr><td>Last Login:</td>
+	<td>
+		{% if not user_to_view.last_login%}
+			Never
+		{% else %}
+			{{last_login}}
+		{% endif %}
+	</td>
+</tr>
+<tr><td>Expiry:</td><td>{{user_profile_to_view.expiry}}</td></tr>
+<tr><td>Comment:</td><td>{{user_profile_to_view.comment}}</td></tr>
+<tr><th>Groups and Permissions</th>
+<td><table>
+<tr><td>Group Membership:</td>
+	<td>
+		{% if not users_groups %}None{% endif %}
+		{% for xGroup in users_groups %}
+			<a href="/groups/view/{{ xGroup.id }}/">{{ xGroup.group_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+		{% endfor %}
+	</td>
+</tr>
+<tr><td>Allowed Scripts:</td>
+	<td>
+		{% if not users_scripts %}None{% endif %}
+		{% for script in users_scripts %}
+			<a href="/scripts/view/{{ script.id }}/">{{ script.script_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+		{% endfor %}
+	</td>
+</tr>
+<tr><td>Allowed Read-Only Server Links:</td>
+	<td>
+		{% if not users_read_servers %}None{% endif %}
+		{% for read_server in users_read_servers %}
+			<a href="/serverlinks/view/{{ read_server.id }}/">{{ read_server.server_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+		{% endfor %}
+	</td>
+</tr>
+<tr><td>Allowed Read/Write Server Links:</td>
+	<td>
+		{% if not users_write_servers %}None{% endif %}
+		{% for write_server in users_write_servers %}
+			<a href="/serverlinks/view/{{ write_server.id }}/">{{ write_server.server_name }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+		{% endfor %}
+	</td>
+</tr>
+</table>
+</td>
+</table>
+<p></p>
+<form method=get action="">
+<div>
+<input type="button" value="Edit" onClick="goToURL('/users/edit/{{ user_to_view.id }}/')">
+<input type="button" value="Change Password" onClick="window.location = '/users/changepassword/{{ user_to_view.id }}/'">
+</div>
+</form>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<p>Browse for a file to upload</p>
+<form method="post" action="/explorer/upload/" enctype="multipart/form-data">
+	<input type="file" name="file">
+	<input type="hidden" name="operation" value="chdir">
+	<input type="hidden" name="new_dir" value="{{curr_dir}}">
+	<div>
+		<input type="submit" name="button" value="Upload">
+		<input type="submit" name="button" value="Cancel">
+	</div>
+</form>
+{% endblock %}

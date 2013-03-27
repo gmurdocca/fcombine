@@ -1,0 +1,118 @@
+#!/bin/bash
+#
+# Init file for Fcombine xSFTP daemon
+#
+# chkconfig: 2345 90 12
+# description: Fcombine xSFTP daemon
+#
+# processname: xsftpd
+# config: /etc/xsftp/keys/xsftp_host_dsa_key
+# config: /etc/xsftp/keys/xsftp_host_dsa_key.pub
+# config: /etc/xsftp/xsftp.conf
+# pidfile: /var/run/xsftp.pid
+
+# source function library
+. /etc/rc.d/init.d/functions
+
+
+# export the PYTHONPATH environment variable
+#export PYTHONPATH=/opt/xsftp/bin
+export DJANGO_SETTINGS_MODULE=xsftp.settings
+
+RETVAL=0
+prog="Fcombine Daemon"
+
+# Ensure the ip_conntrack_ftp kernel module is loaded
+modprobe ip_conntrack_ftp
+
+# Some functions to make the below more readable
+KEYGEN=/usr/bin/ssh-keygen
+XSFTPD=/opt/fcombine/bin/xsftpd
+DSA_KEY=/etc/xsftp/keys/xsftp_key
+PID_FILE=/var/run/xsftpd.pid
+LOCK_FILE=/var/lock/subsys/xsftpd
+
+# Set correct permissions on daemon executable
+chmod 755 $XSFTPD
+
+do_dsa_keygen() {
+	if [ ! -s $DSA_KEY ]; then
+		echo -n $"Generating xSFTP SSH2 DSA host key: "
+		if $KEYGEN -q -t dsa -f $DSA_KEY -C '' -N '' >&/dev/null; then
+			chmod 600 $DSA_KEY
+			chmod 644 $DSA_KEY.pub
+			success $"xSFTP DSA key generation"
+			echo -n $"$prog: Success on DSA key generation"
+			echo
+		else
+			failure $"xSFTP DSA key generation"
+			echo -n $"$prog: Failure on DSA key generation"
+			echo
+			exit 1
+		fi
+	fi
+}
+
+
+start()
+{
+	# If PID_FILE exists
+	if [ -s $PID_FILE ]; then
+		# If there is a process running with the PID in the PID_FILE
+		if ps h -p `cat $PID_FILE` > /dev/null 2>&1; then
+			# If the process looks like it is xsftpd
+			if ps h -p `cat $PID_FILE` | grep $XSFTPD > /dev/null 2>&1; then
+				# Optional - detect the status of the process (eg zombie)
+				# Then Exit with failure - tell user that it looks like it is already running
+				failure $"Already running..."
+				echo -n $"$prog: Already running..."
+				echo
+				exit 1
+			fi
+			# Delete the PID file
+			rm $PID_FILE
+		fi
+	# By the time we get here, there will be no PID_FILE
+	fi
+
+	# Create DSA key if necessary
+	do_dsa_keygen	
+	echo -n $"Starting $prog:"
+	$XSFTPD $OPTIONS && success || failure
+	#initlog -c "$XSFTPD $OPTIONS" && success || failure
+	RETVAL=$?
+	[ "$RETVAL" = 0 ] && touch $LOCK_FILE
+	echo
+}
+
+stop()
+{
+	echo -n $"Stopping $prog:"
+	killproc $XSFTPD -TERM
+	RETVAL=$?
+	[ "$RETVAL" = 0 ] && rm -f $LOCK_FILE && rm -f $PID_FILE
+	echo
+}
+
+
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		start
+		;;
+	status)
+		status "python $XSFTPD"
+		RETVAL=$?
+		;;
+	*)
+		echo $"Usage: $0 {start|stop|restart|status}"
+		RETVAL=1
+esac
+exit $RETVAL

@@ -1,0 +1,148 @@
+#!/usr/bin/python
+############################################################################
+# fxsh - Fcombine Shell 
+# ############################################
+#
+# Fcombine - An enterprise grade automounter and file server
+# Copyright (C) 2013 George Murdocca
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+
+
+##########################################
+#    IMPORTS
+##########################################
+
+import sys, os, pwd, re, subprocess
+# Update the python path so we can import our django project
+sys.path.append("/opt/fcombine/www")
+os.environ["DJANGO_SETTINGS_MODULE"]="xsftp.settings"
+import xsftp.webui.models
+
+
+##########################################
+#    UTILITIES FUNCTIONS & CONSTANTS
+##########################################
+
+# set up regexes
+validScpSwitchPattern = re.compile(r'^-[a-zA-Z-]+$')
+
+# debug setting (if True, logs are written to /tmp/fxsh.log)
+DEBUG = False
+
+def debug(message):
+    if DEBUG:
+        logFile = file("/tmp/fxsh.log", "a")
+        logFile.write(message + "\n")
+        logFile.flush()
+        logFile.close()
+
+def cleanPath(path):
+    '''
+    Cleans up any "." and/or ".." entries in specified path, and returns result.
+    - Does *not* evaluate or resolve symlinks
+    - Result never starts with "/" since input path is assumed to be relative to
+      root
+    '''
+    pathParts = path.split("/")
+    newParts = list()
+    for part in pathParts:
+        if part == '..' and newParts:
+            newParts.pop()
+        if part != '..' and part != '.':
+            newParts.append(part)
+    if newParts:
+        newPath = os.path.join(*newParts)
+    else:
+        newPath = ""
+    return newPath
+
+
+#########################################
+#    MAIN BLOCK
+#########################################
+
+
+if __name__ == "__main__":
+
+    # log arguments for debugging
+    debug("fxsh args: %s" % sys.argv)
+
+    # ensure the connecting user hasn't expired or been disabled
+    username = pwd.getpwuid(os.getuid())[0]
+    user = xsftp.webui.models.User.objects.get(username=username)
+    if user.userprofile.is_expired():
+        print "Access denied: Account has expired."
+        sys.exit()
+    if not user.is_active:
+        print "Access denied: Account is disabled."
+        sys.exit()
+
+    # Check that a valid command was specified
+    # first check if the user is an admin and allowed to access the shellmenu
+    if user.is_staff:
+        if    len(sys.argv) == 1:
+            debug("Spawning bash")
+            os.environ['ENV'] = "~/.bashrc"
+            # just execl /bin/bash and their ~/.bashrc will spawn the shellmenu.
+            os.execl('/bin/bash', '/bin/bash')
+
+    # else, ensure this shell has been directed to do something sane and secure:
+    elif (
+        # if exactly 3 args were not specified,
+        # the first arg being the shell itself
+        len(sys.argv) != 3 or
+        # if the middle arg was not "-c"
+        sys.argv[1] != "-c" or
+        # if the 3rd arg doesn't request either scp or sftp,
+        (not sys.argv[2].startswith("scp") and
+                sys.argv[2] not in ["/usr/libexec/openssh/sftp-server", \
+                                    "/opt/fcombine/bin/sftp-server.vroot"]) or
+        # if scp was requested, and it doesnt have at least 3 arguments
+        (sys.argv[2].startswith("scp") and len(sys.argv[2].split()) < 3) or
+        # if scp was requested, and scp's switches don't look nice
+        (sys.argv[2].split()[0] == "scp" and
+        not reduce(lambda x, y: x and y,
+                   [(validScpSwitchPattern.search(arg) or False) \
+                   for arg in sys.argv[2].split()[1:-1]] \
+                  ) \
+        ) or
+        # or the single quote is specified anywhere
+        sys.argv[2].find("'") != -1
+        ):
+        # then error and bail.
+        debug("Rejecting user's non-SFTP/SCP request")
+        print "Sorry, this system allows SFTP and SCP only."
+        sys.exit(-1)
+
+    # if scp was requested
+    if sys.argv[2].split()[0] == "scp":
+        # get the whole shell command and split on whitespace
+        # this will return a list with >= 3 elements given our check above.
+        scpArgs = sys.argv[2].split()
+        # replace the scp command with our modified one which performs a chroot
+        scpArgs[0] = '/opt/fcombine/bin/scp.vroot'
+        newScpCmd = " ".join(scpArgs)
+        # Run the scp command, using bash to launch it so that shell expansion
+        # happens.
+        p = subprocess.Popen(newScpCmd, shell=True, executable='/bin/bash', \
+                close_fds=True)
+        p.wait()
+
+    else:
+        # spawn the vrooted sftp subsystem.
+        os.execl('/opt/fcombine/bin/sftp-server.vroot',
+                 '/opt/fcombine/bin/sftp-server.vroot', '-fLOCAL1', '-lINFO')
+

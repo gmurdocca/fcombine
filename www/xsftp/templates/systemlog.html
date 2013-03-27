@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>System Log</h3>
+<form method=get action="">
+	<div>
+		<input type="button" value="Download Log" onClick="goToURL('/systemlog/download/')">
+		<input type="button" value="Refresh" onClick="goToURL('/systemlog/')">
+		<input type="button" value="View Archive" onClick="goToURL('/systemlog/archive/')">
+	</div>
+</form>
+<div id="systemlog" class="autoheight_vp">
+    <table>
+        {% for row in logrows %}
+			<tr>
+				{% for cell in row %}
+					{% ifequal forloop.parentloop.counter 1 %}
+						<th>{{cell}}</th>
+					{% else %}
+						<td style="word-wrap: break-word">{{cell}}</td>
+					{% endifequal %}
+				{% endfor %}
+			</tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

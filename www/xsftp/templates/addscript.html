@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Add a New Script</h3><p>
+<form enctype="multipart/form-data" method= "post" action="/scripts/add/">
+	<table>
+		{{ newscriptform.as_table }}
+	</table>
+	<input type="submit" value="Add Script">
+</form>
+<script type="text/javascript">
+	document.getElementById("id_script_name").focus()
+</script>
+{% endblock %}

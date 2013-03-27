@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>System Status</h3>
+<br />
+<table>
+	<tr>
+		<td>Device Name</td>
+		<td><b>{{config.device_name}}</b></td>
+	</tr>
+	<tr>
+		<td>Service Status:</td>
+		<td>
+			{% if daemonStatus %}
+				<img src="/media/xsftp/icon-yes.gif" alt="yes" > Running <input type="button" value="Stop" onClick="goToURL('/status/stop/')">
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="no" > Stopped! <input type="button" value="Start" onClick="goToURL('/status/start/')">
+			{% endif %}
+		</td>
+	</tr>
+	<tr>
+		<td>Current logged in users:</td>
+		<td>
+			{% if not webuiUsers %}None{% endif %}
+			{% for user in webuiUsers %}
+				<a href="/users/view/{{ user.id }}/">{{ user.username }}</a>{% if not forloop.last %},&nbsp;{% endif %}
+			{% endfor %}
+			<br/>
+			(Total users: {{ webuiUserCount }})
+		</td>
+	</tr>
+	<tr>
+		<td>System Time:</td><td>{{ systemTime }}</td>
+    </tr>
+	<tr>
+		<td>System Uptime:</td>
+		<td>{{ uptime }}</td>
+	</tr>
+    <tr>
+        <td>CPU Count:</td><td>{{ cpuCount }}</td>
+    </tr>
+    <tr>
+        <td>CPU Utilisation Average:</td><td>{{ cpuUtilisation }}% since boot</td>
+    </tr>
+	<tr>
+		<td>System Load Averages:</td>
+        <td>
+            <table>
+                <tr><td><b>1 Min:</b></td><td>{{ loadAvg.0 }}</td></tr>
+                <tr><td><b>5 Min:</b></td><td>{{ loadAvg.1 }}</td></tr>
+                <tr><td><b>15 Min:</b></td><td>{{ loadAvg.2 }}</td></tr>
+            </table>
+        </td>
+	</tr>
+    <tr>
+        <td>Memory Utilisation:</td>
+        <td>
+            <table>
+                <tr>
+                    <td><b>Total:</b></td><td>{{ memTotal }} kB</td>
+                </tr>
+                <tr>
+                    <td><b>Available:</b></td><td>{{ memAvailable }}%</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+	<tr>
+		<td>Network Status:</td>
+		<td>
+			<table>
+				{% for item in ethinfo %}
+					<tr>
+						<td><b>{{ item.0 }}:</b></td>
+						<td>{{ item.1 }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+</table>
+{% endblock %}

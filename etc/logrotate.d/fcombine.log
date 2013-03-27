@@ -1,0 +1,7 @@
+/var/log/fcombine.log {
+    weekly
+    rotate 52
+    postrotate
+        /bin/kill -HUP `cat /var/run/rsyslogd.pid 2> /dev/null` 2> /dev/null || true
+    endscript
+}

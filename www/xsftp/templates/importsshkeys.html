@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Import SSH Public Key(s)</h3><p>
+<form enctype="multipart/form-data" method= "post" action="/mysshkeys/import/">
+	<table>
+		{{ importsshkeyform.as_table }}
+	</table>
+	<input type="submit" value="Add key(s)">
+</form>
+<script type="text/javascript">
+	document.getElementById("id_ssh_key_file").focus()
+</script>
+{% endblock %}

@@ -1,0 +1,855 @@
+--- sftp-server.c.orig	2010-02-17 07:24:24.000000000 +1100
++++ sftp-server.c	2010-03-15 13:35:22.000000000 +1100
+@@ -57,7 +57,7 @@
+ #define get_string(lenp)		buffer_get_string(&iqueue, lenp);
+ 
+ /* Our verbosity */
+-LogLevel log_level = SYSLOG_LEVEL_ERROR;
++LogLevel log_level = SYSLOG_LEVEL_INFO;
+ 
+ /* Our client */
+ struct passwd *pw = NULL;
+@@ -80,6 +80,383 @@
+ 	Attrib attrib;
+ };
+ 
++/* Fcombine modifications */
++
++char *vroot;
++
++static void
++plogit (const char* fmt, ...)
++{
++	va_list args;
++	char *fmt2;
++
++	fmt2 = xmalloc(64 + 1 + 255 + 2 + strlen(fmt) + 1); // username + @ + source_address + ": " + length_of_original_format_string + '\0'
++	fmt2 = strcpy(fmt2, pw->pw_name);
++	fmt2 = strcat(fmt2, "@");
++	fmt2 = strcat(fmt2, client_addr);
++	fmt2 = strcat(fmt2, ": ");
++	fmt2 = strcat(fmt2, fmt);
++	va_start(args, fmt);
++	do_log(SYSLOG_LEVEL_INFO, fmt2, args);
++	va_end(args);
++	xfree(fmt2);
++}
++
++static char *                                            
++vroot_error (char* rpath, char* fmt, ...)
++{
++  va_list args;
++
++  if(fmt)
++  {
++    va_start(args, fmt);
++    plogit(fmt, args);
++    va_end(args);
++  }
++  rpath[0] = '\0';
++  return rpath;
++}
++
++
++/* first_parts and last_part must be buffers of size strlen(path) + 1 */
++static void
++split_path (char *path, char *first_parts, char *last_part)
++{
++	char *last_slash;
++	/* Get start pointer */
++	char *start = path;
++	/* Skip past any leading slashes */
++	while (start[0] == '/') start++;
++	/* Find the last slash, and also handle there not being one */
++	if ((last_slash = strrchr(start, '/')) == NULL)
++  {
++		strcpy(first_parts, "/");
++		strcpy(last_part, start);
++	}
++  else
++  {
++		/* Copy in everything from the start up to the last slash */
++		strncpy(first_parts, start, last_slash - start);
++		/* Overwrite that last slash with a null */
++		first_parts[(last_slash - start)] = '\0';
++		strcpy(last_part, last_slash + 1);
++	}
++}
++
++static char *
++strip_vroot(char *oldpath)
++{
++    int len_oldpath;
++    char *newpath;
++	int len_vroot = strlen(vroot);
++
++    len_oldpath = strlen(oldpath);
++    newpath = xmalloc(len_oldpath - len_vroot + 2);
++    strcpy(newpath, oldpath+len_vroot);
++    if (newpath[0] == '\0') {
++        xfree(newpath);
++        newpath = xstrdup("/");
++    }
++    xfree(oldpath);
++    return newpath;
++}
++
++static char *
++apply_vroot(char *oldpath)
++{
++    int len_oldpath;
++    char *slashedpath;
++    char *vrootedpath;
++	int len_vroot = strlen(vroot);
++
++    len_oldpath = strlen(oldpath);
++    slashedpath = xmalloc(len_vroot + len_oldpath + 2);  /* +2 because ... +1 for the \0 terminator, and another +1 for a possible slash that might need to be put in between vroot and oldpath */
++    vrootedpath = xmalloc(len_vroot + len_oldpath + 2);
++    /* Check if path has preceding '/' - if not, add it */
++    if (oldpath[0] != '/') {
++        strcpy(slashedpath, "/");
++        strcat(slashedpath, oldpath);
++    } else {
++        strcpy(slashedpath, oldpath);
++    }
++    /* Now prepend the vroot, store in temppath2 */
++    strcpy(vrootedpath, vroot);
++    strcat(vrootedpath, slashedpath);
++    xfree(oldpath);
++    xfree(slashedpath);
++    return vrootedpath;
++}
++
++/* Return the canonical absolute name of file NAME.  A canonical name
++   does not contain any `.', `..' components nor any repeated file name
++   separators ('/') or symlinks. The result is malloc'd.
++   oldpath must be an xmalloc'd buffer.
++   The function returns an xmalloc'd buffer, which must be freed by the caller.
++   (The returned buffer may be the same as the buffer that was passed in)
++*/
++static char *
++realpath_vroot_full(char *oldpath)
++{
++  char *rname, *dest, *extra_buf = NULL; /* The building location. extra_buf may be used to replace oldpath if we need to expand a symlink */
++  char *start; /* start and end are pointers into oldpath or extra_buf. They mark the start and end of a path_part */
++  char *end;
++  char *rname_limit; /* The end of the rname buffer? */
++  size_t extra_len = 0; /* ? */
++  int num_links = 0;
++
++  if (oldpath[0] == '\0')
++    {
++      return vroot_error(oldpath, "realpath_vroot_full received empty string");
++    }
++
++  rname = xmalloc (MAXPATHLEN);
++  rname_limit = rname + MAXPATHLEN;
++  rname[0] = '/';
++  dest = rname + 1;
++
++  for (start = end = oldpath; *start; start = end)
++  {
++    /* Skip sequence of multiple file name separators. start points at the char after any '/' chars */
++    while (*start == '/')
++      ++start;
++    /* Find end of component - ie end will point to the char that is the next '/' or the char that is the '\0' on the end of the string  */
++    for (end = start; *end && *end != '/'; ++end)
++      ; /* Do nothing */
++    if (end - start == 0) /* This can only happen if there was a trailing slash. If so, then we're done, so break out of the for loop */
++      break;
++    else if (end - start == 1 && start[0] == '.') /* If the path part was 1 char long and the char was a '.', do nothing*/
++      ; /* Do nothing */
++    else if (end - start == 2 && start[0] == '.' && start[1] == '.') /* If the path part was 2 chars long and those two chars were '..', then back up the previous component in rname */
++    {
++      /* Back up to previous component, ignore if at root already.  */
++      if (dest > rname + 1)
++        while ((--dest)[-1] != '/');
++    }
++    else /* Else, we've found something interesting - either a file, dir or symlink */
++    {
++      struct stat st;
++      if (dest[-1] != '/') 
++        *dest++ = '/';
++
++      if (dest + (end - start) >= rname_limit)
++      {
++        int dest_offset = dest - rname;
++        size_t new_size = rname_limit - rname;
++
++        if (end - start + 1 > MAXPATHLEN)
++          new_size += end - start + 1;
++        else
++          new_size += MAXPATHLEN;
++        rname = xrealloc (rname, new_size, sizeof(char));
++        rname_limit = rname + new_size;
++        dest = rname + dest_offset;
++      }
++
++      dest = memcpy (dest, start, end - start);
++      dest += end - start;
++      *dest = '\0';
++
++      /* We need to temporarily apply the vroot to rname so we can stat the latest path part we just tacked on
++       * We will create a new buffer called vrooted_rname to do this */
++      char* vrooted_rname = xstrdup(rname);
++      vrooted_rname = apply_vroot(vrooted_rname);
++      debug("REALPATH VROOT: vrooted rpath (after vrooting) is %s", vrooted_rname);
++
++      if (lstat(vrooted_rname, &st) < 0) {
++        xfree(vrooted_rname);
++        xfree(oldpath);
++        return vroot_error(rname, NULL);
++      }
++
++      if (S_ISLNK (st.st_mode))
++      {
++        char *buf;
++        size_t n, len;
++
++        if (++num_links > MAXSYMLINKS)
++        { 
++          xfree(oldpath);
++          xfree(vrooted_rname);
++          return vroot_error(rname, "Too many symlinks");
++        }
++
++        buf = xmalloc(MAXPATHLEN);
++        n = readlink(vrooted_rname, buf, MAXPATHLEN - 1);
++        xfree(vrooted_rname);
++
++        if (n < 0) {
++          xfree(buf);
++          xfree(oldpath);
++          return vroot_error(rname, "Couldn't read symlink");
++        }
++
++        buf[n] = '\0';
++        len = strlen (end);
++
++        if (!extra_len)
++        {
++          extra_len = ((n + len + 1) > MAXPATHLEN) ? (n + len + 1) : MAXPATHLEN;
++          extra_buf = xmalloc (extra_len);
++          memmove (&extra_buf[n], end, len + 1);
++          xfree(oldpath);
++        }
++        else if ((n + len + 1) > extra_len)
++        {
++          extra_len = n + len + 1;
++          extra_buf = xrealloc (extra_buf, extra_len, sizeof(char));
++          memmove(&extra_buf[n], end, len + 1);
++        }
++        else {
++          memmove(&extra_buf[n], end, len + 1);
++        }
++
++        oldpath = end = memcpy(extra_buf, buf, n);
++
++        if (buf[0] == '/')
++          dest = rname + 1; /* It's an absolute symlink */
++        else if (dest > rname + 1) /* Back up to previous component, ignore if at root already: */
++          while ((--dest)[-1] != '/');
++        xfree (buf);
++      } /* End of If we found a symlink */
++      else if (!S_ISDIR (st.st_mode) && *end != '\0')
++      {
++        xfree(oldpath);
++        return vroot_error(rname, "Invalid path");
++      }
++    } /* End of Else we found a symlink, dir or file */
++  } /* End of the big for loop that goes through the path parts */
++  /* Don't return trailing slash */
++  if (dest > rname + 1 && dest[-1] == '/')
++    --dest;
++  *dest = '\0';
++  rname = apply_vroot(rname);
++  return rname;
++}
++
++static char *
++realpath_vroot_partial(char *oldpath, int last_part_must_exist)
++{
++	char *first_parts, *last_part;
++	struct stat st;
++	int ret;
++
++	/* If oldpath is empty string, return empty string */
++	if (strlen(oldpath) == 0)
++		return oldpath;
++	/* If oldpath == '/', return vroot */
++	if (strcmp(oldpath, "/") == 0) {
++		xfree(oldpath);
++		return xstrdup(vroot);
++	}
++	/* Split oldpath into first_parts and last_part */
++	first_parts = xmalloc(strlen(oldpath) + 1);
++	last_part = xmalloc(strlen(oldpath) + 1);
++	split_path(oldpath, first_parts, last_part);
++	xfree(oldpath);
++	
++	first_parts = realpath_vroot_full(first_parts);
++	/* If realpath_vroot_full returned an empty string, then we do the same */
++	if (strlen(first_parts) == 0) {
++		xfree(last_part);
++		return first_parts;
++	}
++	/* Construct the full path first_parts + / + last_part */
++	first_parts = xrealloc(first_parts, strlen(first_parts) + strlen(last_part) + 2, sizeof(char));
++	strcat(first_parts, "/");
++	strcat(first_parts, last_part);
++	xfree(last_part);
++	if (last_part_must_exist) {
++		/* See if the resulting file exists */
++		ret = lstat(first_parts, &st);
++		/* If file doesn't exist, return empty string */
++		if (ret < 0 ) {
++			first_parts[0] = '\0';
++			return first_parts;
++		}
++	}
++	/* Otherwise, return the full path */
++	return first_parts;
++}
++
++static char *
++realpath_vroot_link(char *oldpath)
++{
++	return realpath_vroot_partial(oldpath, 1);
++}
++
++static char *
++realpath_vroot_end(char *oldpath)
++{
++
++	struct stat st;
++	char *link_value, *newpath, *first_parts, *last_part;
++	int symlinks = 0;
++	int n;
++
++	oldpath = realpath_vroot_partial(oldpath, 0);
++	/* If oldpath exists and is a symlink */
++	while (lstat(oldpath, &st) == 0 && S_ISLNK(st.st_mode) && symlinks < MAXSYMLINKS) {
++		symlinks++;
++		/* Check if max symlinks reached */
++		/* Resolve the link */
++		link_value = xmalloc(MAXPATHLEN + 1);
++		if ((n = readlink(oldpath, link_value, MAXPATHLEN + 1)) < 0) {
++			/* If we can't read the link value, return empty string */
++			xfree(link_value);
++			oldpath[0] = '\0';
++			return oldpath;
++		}
++		link_value[n] = '\0';
++		/* If link is absolute */
++		if (link_value[0] == '/') {
++			newpath = xmalloc(strlen(link_value) + 2);
++			strcpy(newpath, link_value);
++			/* Add trailing slash if oldpath has a trailing slash */
++			if (oldpath[strlen(oldpath) - 1] == '/')
++				strcat(newpath, "/");
++      		newpath = realpath_vroot_partial(newpath, 0);
++		} else { /* link is relative */
++			/* Strip the vroot off oldpath */
++			oldpath = strip_vroot(oldpath);
++			/* oldpath now starts with a /, and has 0 or more chars after that first slash. He may or may not end in a slash */
++			/* Split oldpath into his respective parts */
++			newpath = xmalloc(strlen(link_value) + strlen(oldpath) + 2);
++			first_parts = xmalloc(strlen(oldpath) + 1);
++			last_part = xmalloc(strlen(oldpath) + 1);
++			split_path(oldpath, first_parts, last_part);
++			/* Start building the new path string in newpath */
++			strcpy(newpath, first_parts);
++			/* first_parts starts with a /, and may have 0 or more chars after it. It does not end in a /. */
++			/* If last_part is a "/" */
++			if (strcmp(last_part, "/") == 0) { 
++				/* then the last bit of first_parts is the symlink and we need to nuke it, */
++				newpath[(strrchr(newpath, '/') - newpath) + 1] = '\0';
++				strcat(newpath, link_value);
++				/* Also, we will need to include a trailing slash in the final thing. */
++				strcat(newpath, "/");
++ 			} else {
++				/* last_part is the symlink part and we don't need it */
++				strcat(newpath, "/");
++				strcat(newpath, link_value);
++				/* There will be no trailing slash on the final thing */
++			}
++			newpath = realpath_vroot_partial(newpath, 0);
++			xfree(first_parts);
++			xfree(last_part);
++		}
++		xfree(link_value);
++		/* Feed newpath back into this algorithm */
++		xfree(oldpath);
++		oldpath = newpath;
++	} /* end of "oldpath is a symlink" code */
++	if (symlinks == MAXSYMLINKS) {
++		oldpath[0] = '\0';
++	}
++	return oldpath;
++}
++
++/* End Fcombine modifications */
++
+ static int
+ errno_to_portable(int unixerrno)
+ {
+@@ -332,16 +709,16 @@
+ handle_log_close(int handle, char *emsg)
+ {
+ 	if (handle_is_ok(handle, HANDLE_FILE)) {
+-		logit("%s%sclose \"%s\" bytes read %llu written %llu",
++		plogit("%s%sclose \"%s\" bytes read %llu written %llu",
+ 		    emsg == NULL ? "" : emsg, emsg == NULL ? "" : " ",
+ 		    handle_to_name(handle),
+ 		    (unsigned long long)handle_bytes_read(handle),
+ 		    (unsigned long long)handle_bytes_write(handle));
+-	} else {
+-		logit("%s%sclosedir \"%s\"",
++	} /*else {
++		plogit("%s%sclosedir \"%s\"",
+ 		    emsg == NULL ? "" : emsg, emsg == NULL ? "" : " ",
+ 		    handle_to_name(handle));
+-	}
++	}*/
+ }
+ 
+ static void
+@@ -406,7 +783,7 @@
+ 	debug3("request %u: sent status %u", id, status);
+ 	if (log_level > SYSLOG_LEVEL_VERBOSE ||
+ 	    (status != SSH2_FX_OK && status != SSH2_FX_EOF))
+-		logit("sent status %s", status_to_message(status));
++		plogit("sent status %s", status_to_message(status));
+ 	buffer_init(&msg);
+ 	buffer_put_char(&msg, SSH2_FXP_STATUS);
+ 	buffer_put_int(&msg, id);
+@@ -513,6 +890,7 @@
+ 
+ /* parse incoming */
+ 
++/* Receives client version, sends server version and supported extension commands */
+ static void
+ process_init(void)
+ {
+@@ -536,6 +914,15 @@
+ 	buffer_free(&msg);
+ }
+ 
++/* Open or create a file ...
++ * int      id = message_id
++ * string   name = file_name
++ * int      pflags = READ | WRITE | APPEND | CREATE | TRUNCATE | EXCL(NO OVERWRITE)
++ * ATTRS    attrs = file attributes
++ *
++ * Sends to client ...
++ * int      handle = file handle, or status = an error status
++ * */
+ static void
+ process_open(void)
+ {
+@@ -546,12 +933,13 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	name = realpath_vroot_end(name); /* vroot_realpath_end - we don't care if the last bit doesn't exist */
+ 	pflags = get_int();		/* portable flags */
+ 	debug3("request %u: open flags %d", id, pflags);
+ 	a = get_attrib();
+ 	flags = flags_from_portable(pflags);
+ 	mode = (a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS) ? a->perm : 0666;
+-	logit("open \"%s\" flags %s mode 0%o",
++	plogit("open \"%s\" flags %s mode 0%o",
+ 	    name, string_from_portable(pflags), mode);
+ 	fd = open(name, flags, mode);
+ 	if (fd < 0) {
+@@ -570,6 +958,7 @@
+ 	xfree(name);
+ }
+ 
++/* Takes in an int as the previously opened file handle, returns a status int */
+ static void
+ process_close(void)
+ {
+@@ -585,6 +974,7 @@
+ 	send_status(id, status);
+ }
+ 
++/* Takes in an int as the previously opened file handle, returns data or a status int */
+ static void
+ process_read(void)
+ {
+@@ -626,6 +1016,7 @@
+ 		send_status(id, status);
+ }
+ 
++/* Takes in an int as the previously opened file handle, a bunch of data and returns a status int */
+ static void
+ process_write(void)
+ {
+@@ -665,6 +1056,7 @@
+ 	xfree(data);
+ }
+ 
++/* stat does not include a filename */
+ static void
+ process_do_stat(int do_lstat)
+ {
+@@ -676,6 +1068,11 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	if (do_lstat) {
++		name = realpath_vroot_link(name); /* If stat, then do realpath_vroot_full. But if lstat, do realpath_vroot_link */
++	} else {
++		name = realpath_vroot_full(name);
++	}
+ 	debug3("request %u: %sstat", id, do_lstat ? "l" : "");
+ 	verbose("%sstat name \"%s\"", do_lstat ? "l" : "", name);
+ 	ret = do_lstat ? lstat(name, &st) : stat(name, &st);
+@@ -703,6 +1100,7 @@
+ 	process_do_stat(1);
+ }
+ 
++/* Only operates on a previously opened file */
+ static void
+ process_fstat(void)
+ {
+@@ -742,6 +1140,7 @@
+ 	return tv;
+ }
+ 
++/* Takes in a name (need to intercept this), and returns a status (no need to intercept) */
+ static void
+ process_setstat(void)
+ {
+@@ -752,17 +1151,18 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	name = realpath_vroot_full(name); /* Bog standard realpath_vroot_full. Although what if we want to setstat on a symlink? XXX Maybe for V2 */
+ 	a = get_attrib();
+ 	debug("request %u: setstat name \"%s\"", id, name);
+ 	if (a->flags & SSH2_FILEXFER_ATTR_SIZE) {
+-		logit("set \"%s\" size %llu",
++		plogit("set \"%s\" size %llu",
+ 		    name, (unsigned long long)a->size);
+ 		ret = truncate(name, a->size);
+ 		if (ret == -1)
+ 			status = errno_to_portable(errno);
+ 	}
+ 	if (a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS) {
+-		logit("set \"%s\" mode %04o", name, a->perm);
++		plogit("set \"%s\" mode %04o", name, a->perm);
+ 		ret = chmod(name, a->perm & 07777);
+ 		if (ret == -1)
+ 			status = errno_to_portable(errno);
+@@ -773,13 +1173,13 @@
+ 
+ 		strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
+ 		    localtime(&t));
+-		logit("set \"%s\" modtime %s", name, buf);
+-		ret = utimes(name, attrib_to_tv(a));
++		plogit("set \"%s\" modtime %s", name, buf);
++		ret = utimes(name, attrib_to_tv(a)); /* XXX How does utimes handle a file that is too long, or doesn't exist? */
+ 		if (ret == -1)
+ 			status = errno_to_portable(errno);
+ 	}
+ 	if (a->flags & SSH2_FILEXFER_ATTR_UIDGID) {
+-		logit("set \"%s\" owner %lu group %lu", name,
++		plogit("set \"%s\" owner %lu group %lu", name,
+ 		    (u_long)a->uid, (u_long)a->gid);
+ 		ret = chown(name, a->uid, a->gid);
+ 		if (ret == -1)
+@@ -789,6 +1189,7 @@
+ 	xfree(name);
+ }
+ 
++/* Takes in a filehandle int, and returns a status (no need to intercept) */
+ static void
+ process_fsetstat(void)
+ {
+@@ -808,14 +1209,14 @@
+ 		char *name = handle_to_name(handle);
+ 
+ 		if (a->flags & SSH2_FILEXFER_ATTR_SIZE) {
+-			logit("set \"%s\" size %llu",
++			plogit("set \"%s\" size %llu",
+ 			    name, (unsigned long long)a->size);
+ 			ret = ftruncate(fd, a->size);
+ 			if (ret == -1)
+ 				status = errno_to_portable(errno);
+ 		}
+ 		if (a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS) {
+-			logit("set \"%s\" mode %04o", name, a->perm);
++			plogit("set \"%s\" mode %04o", name, a->perm);
+ #ifdef HAVE_FCHMOD
+ 			ret = fchmod(fd, a->perm & 07777);
+ #else
+@@ -830,7 +1231,7 @@
+ 
+ 			strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
+ 			    localtime(&t));
+-			logit("set \"%s\" modtime %s", name, buf);
++			plogit("set \"%s\" modtime %s", name, buf);
+ #ifdef HAVE_FUTIMES
+ 			ret = futimes(fd, attrib_to_tv(a));
+ #else
+@@ -840,7 +1241,7 @@
+ 				status = errno_to_portable(errno);
+ 		}
+ 		if (a->flags & SSH2_FILEXFER_ATTR_UIDGID) {
+-			logit("set \"%s\" owner %lu group %lu", name,
++			plogit("set \"%s\" owner %lu group %lu", name,
+ 			    (u_long)a->uid, (u_long)a->gid);
+ #ifdef HAVE_FCHOWN
+ 			ret = fchown(fd, a->uid, a->gid);
+@@ -854,6 +1255,7 @@
+ 	send_status(id, status);
+ }
+ 
++/* Takes in a path string (need to intercept), returns a handle or a status (both ints, no need to intercept) */
+ static void
+ process_opendir(void)
+ {
+@@ -864,8 +1266,9 @@
+ 
+ 	id = get_int();
+ 	path = get_string(NULL);
++	path = realpath_vroot_full(path); /* realpath_vroot_full */
+ 	debug3("request %u: opendir", id);
+-	logit("opendir \"%s\"", path);
++	//plogit("opendir \"%s\"", path);
+ 	dirp = opendir(path);
+ 	if (dirp == NULL) {
+ 		status = errno_to_portable(errno);
+@@ -898,7 +1301,7 @@
+ 	debug("request %u: readdir \"%s\" (handle %d)", id,
+ 	    handle_to_name(handle), handle);
+ 	dirp = handle_to_dir(handle);
+-	path = handle_to_name(handle);
++	path = handle_to_name(handle); /* We DON'T need to intercept, because it would already be done when the DIR was opened */
+ 	if (dirp == NULL || path == NULL) {
+ 		send_status(id, SSH2_FX_FAILURE);
+ 	} else {
+@@ -915,12 +1318,12 @@
+ 			}
+ /* XXX OVERFLOW ? */
+ 			snprintf(pathname, sizeof pathname, "%s%s%s", path,
+-			    strcmp(path, "/") ? "/" : "", dp->d_name);
++			    strcmp(path, "/") ? "/" : "", dp->d_name); /* We DON'T need to intercept this and strip the vroot from "path", because the "path" is just used to identify the file for the following lstat */
+ 			if (lstat(pathname, &st) < 0)
+ 				continue;
+ 			stat_to_attrib(&st, &(stats[count].attrib));
+ 			stats[count].name = xstrdup(dp->d_name);
+-			stats[count].long_name = ls_file(dp->d_name, &st, 0);
++			stats[count].long_name = ls_file(dp->d_name, &st, 0); /* What does ls_file do? It just expands out a bunch of info about the file and puts it in one big string. It does NOT include the full path to the file */
+ 			count++;
+ 			/* send up to 100 entries in one message */
+ 			/* XXX check packet size instead */
+@@ -950,8 +1353,9 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	name = realpath_vroot_link(name); /* realpath_vroot_link */
+ 	debug3("request %u: remove", id);
+-	logit("remove name \"%s\"", name);
++	plogit("remove name \"%s\"", name);
+ 	ret = unlink(name);
+ 	status = (ret == -1) ? errno_to_portable(errno) : SSH2_FX_OK;
+ 	send_status(id, status);
+@@ -968,11 +1372,12 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	name = realpath_vroot_end(name); /* realpath_vroot_end - we don't care if the last bit doesn't exist */
+ 	a = get_attrib();
+ 	mode = (a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS) ?
+ 	    a->perm & 07777 : 0777;
+ 	debug3("request %u: mkdir", id);
+-	logit("mkdir name \"%s\" mode 0%o", name, mode);
++	plogit("mkdir name \"%s\" mode 0%o", name, mode);
+ 	ret = mkdir(name, mode);
+ 	status = (ret == -1) ? errno_to_portable(errno) : SSH2_FX_OK;
+ 	send_status(id, status);
+@@ -988,8 +1393,9 @@
+ 
+ 	id = get_int();
+ 	name = get_string(NULL);
++	name = realpath_vroot_link(name); /* realpath_vroot_link - we don't want to allow a directory to be deleted by rmdir'ing a symlink that points to it, as per OpenSSH's sftp-server behaviour */
+ 	debug3("request %u: rmdir", id);
+-	logit("rmdir name \"%s\"", name);
++	plogit("rmdir name \"%s\"", name);
+ 	ret = rmdir(name);
+ 	status = (ret == -1) ? errno_to_portable(errno) : SSH2_FX_OK;
+ 	send_status(id, status);
+@@ -999,16 +1405,18 @@
+ static void
+ process_realpath(void)
+ {
+-	char resolvedname[MAXPATHLEN];
++	char *resolvedname;
+ 	u_int32_t id;
+ 	char *path;
+ 
++	resolvedname = xmalloc(MAXPATHLEN);
+ 	id = get_int();
+ 	path = get_string(NULL);
+ 	if (path[0] == '\0') {
+ 		xfree(path);
+ 		path = xstrdup(".");
+ 	}
++	path = realpath_vroot_full(path); /* realpath_vroot_full */
+ 	debug3("request %u: realpath", id);
+ 	verbose("realpath \"%s\"", path);
+ 	if (realpath(path, resolvedname) == NULL) {
+@@ -1016,9 +1424,11 @@
+ 	} else {
+ 		Stat s;
+ 		attrib_clear(&s.attrib);
++		resolvedname = strip_vroot(resolvedname); /* strip_vroot on resolvedname */
+ 		s.name = s.long_name = resolvedname;
+ 		send_names(id, 1, &s);
+ 	}
++	xfree(resolvedname);
+ 	xfree(path);
+ }
+ 
+@@ -1033,8 +1443,10 @@
+ 	id = get_int();
+ 	oldpath = get_string(NULL);
+ 	newpath = get_string(NULL);
++	oldpath = realpath_vroot_link(oldpath); /* realpath_vroot_link */
++	newpath = realpath_vroot_end(newpath); /* realpath_vroot_end */
+ 	debug3("request %u: rename", id);
+-	logit("rename old \"%s\" new \"%s\"", oldpath, newpath);
++	plogit("rename old \"%s\" new \"%s\"", oldpath, newpath);
+ 	status = SSH2_FX_FAILURE;
+ 	if (lstat(oldpath, &sb) == -1)
+ 		status = errno_to_portable(errno);
+@@ -1045,6 +1457,9 @@
+ #ifdef EXDEV
+ 			    || errno == EXDEV
+ #endif
++#ifdef ENOSYS
++				|| errno == ENOSYS
++#endif
+ #ifdef LINK_OPNOTSUPP_ERRNO
+ 			    || errno == LINK_OPNOTSUPP_ERRNO
+ #endif
+@@ -1087,14 +1502,16 @@
+ {
+ 	u_int32_t id;
+ 	int len;
+-	char buf[MAXPATHLEN];
++	char *buf;
+ 	char *path;
+ 
++	buf = xmalloc(MAXPATHLEN);
+ 	id = get_int();
+ 	path = get_string(NULL);
++	path = realpath_vroot_link(path); /* realpath_vroot_link */
+ 	debug3("request %u: readlink", id);
+ 	verbose("readlink \"%s\"", path);
+-	if ((len = readlink(path, buf, sizeof(buf) - 1)) == -1)
++	if ((len = readlink(path, buf, MAXPATHLEN - 1)) == -1)
+ 		send_status(id, errno_to_portable(errno));
+ 	else {
+ 		Stat s;
+@@ -1104,6 +1521,7 @@
+ 		s.name = s.long_name = buf;
+ 		send_names(id, 1, &s);
+ 	}
++	xfree(buf);
+ 	xfree(path);
+ }
+ 
+@@ -1115,10 +1533,11 @@
+ 	int ret, status;
+ 
+ 	id = get_int();
+-	oldpath = get_string(NULL);
++	oldpath = get_string(NULL); /* Don't do anything to this guy */
+ 	newpath = get_string(NULL);
++	newpath = realpath_vroot_end(newpath); /* realpath_vroot_end - we don't care if the bit at the end doesn't exist */
+ 	debug3("request %u: symlink", id);
+-	logit("symlink old \"%s\" new \"%s\"", oldpath, newpath);
++	plogit("symlink old \"%s\" new \"%s\"", oldpath, newpath);
+ 	/* this will fail if 'newpath' exists */
+ 	ret = symlink(oldpath, newpath);
+ 	status = (ret == -1) ? errno_to_portable(errno) : SSH2_FX_OK;
+@@ -1134,8 +1553,10 @@
+ 
+ 	oldpath = get_string(NULL);
+ 	newpath = get_string(NULL);
++	oldpath = realpath_vroot_link(oldpath); /* realpath_vroot_link */
++	newpath = realpath_vroot_end(newpath); /* realpath_vroot_end */
+ 	debug3("request %u: posix-rename", id);
+-	logit("posix-rename old \"%s\" new \"%s\"", oldpath, newpath);
++	plogit("posix-rename old \"%s\" new \"%s\"", oldpath, newpath);
+ 	if (rename(oldpath, newpath) == -1)
+ 		send_status(id, errno_to_portable(errno));
+ 	else
+@@ -1151,8 +1572,9 @@
+ 	struct statvfs st;
+ 
+ 	path = get_string(NULL);
++	path = realpath_vroot_full(path); /* realpath_vroot_full */
+ 	debug3("request %u: statfs", id);
+-	logit("statfs \"%s\"", path);
++	plogit("statfs \"%s\"", path);
+ 
+ 	if (statvfs(path, &st) != 0)
+ 		send_status(id, errno_to_portable(errno));
+@@ -1161,6 +1583,7 @@
+         xfree(path);
+ }
+ 
++/* Uses a handle, not a name, so no Fcombine intercept required */
+ static void
+ process_extended_fstatvfs(u_int32_t id)
+ {
+@@ -1310,8 +1733,7 @@
+ {
+ 	if (pw != NULL && client_addr != NULL) {
+ 		handle_log_exit();
+-		logit("session closed for local user %s from [%s]",
+-		    pw->pw_name, client_addr);
++		plogit("session closed");
+ 	}
+ 	_exit(i);
+ }
+@@ -1332,8 +1754,9 @@
+ 	fd_set *rset, *wset;
+ 	int in, out, max, ch, skipargs = 0, log_stderr = 0;
+ 	ssize_t len, olen, set_size;
+-	SyslogFacility log_facility = SYSLOG_FACILITY_AUTH;
++	SyslogFacility log_facility = SYSLOG_FACILITY_LOCAL1;
+ 	char *cp, buf[4*4096];
++	char cwd[MAXPATHLEN + 6 + 1];   /* +6 to accomadate appending "/xsftp" later on, +1 for the \0 terminator */
+ 
+ 	extern char *optarg;
+ 	extern char *__progname;
+@@ -1384,8 +1807,7 @@
+ 
+ 	pw = pwcopy(user_pw);
+ 
+-	logit("session opened for local user %s from [%s]",
+-	    pw->pw_name, client_addr);
++	plogit("session opened");
+ 
+ 	in = dup(STDIN_FILENO);
+ 	out = dup(STDOUT_FILENO);
+@@ -1395,6 +1817,13 @@
+ 	setmode(out, O_BINARY);
+ #endif
+ 
++    /* Fcombine mod */ 
++    vroot = xmalloc(MAXPATHLEN + 6 + 1); /* +1 to accomodate \0 terminator*/
++    getcwd(cwd, (MAXPATHLEN + 6 + 1));
++    strcpy(vroot, strcat(cwd, "/xsftp"));
++    debug("vroot is %s", vroot);
++    /* End Fcombine mod */
++
+ 	max = 0;
+ 	if (in > max)
+ 		max = in;

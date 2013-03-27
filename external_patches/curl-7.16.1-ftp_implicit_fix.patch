@@ -1,0 +1,22 @@
+--- lib/ftp.c.orig	2010-02-16 16:22:24.000000000 +1100
++++ lib/ftp.c	2010-02-16 13:13:53.000000000 +1100
+@@ -2522,16 +2522,16 @@
+ 
+       2)Private (requested by 'PROT P')
+       */
+-      if(!conn->ssl[SECONDARYSOCKET].use) {
++      //if(!conn->ssl[SECONDARYSOCKET].use) {
+         NBFTPSENDF(conn, "PROT %c",
+                    data->set.ftp_ssl == CURLFTPSSL_CONTROL ? 'C' : 'P');
+         state(conn, FTP_PROT);
+-      }
++      /*}
+       else {
+         result = ftp_state_pwd(conn);
+         if(result)
+           return result;
+-      }
++      }*/
+ 
+       break;
+ 

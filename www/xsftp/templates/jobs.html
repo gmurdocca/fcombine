@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load webui_tools %}
+{% block maincontent %}
+<h3>{{ pageHeading }}</h3>
+{% if not allJobs  %}
+	<form method="get" action="">
+		<div>
+			<input type="button" class="alt" value="Add New Job" onClick="goToURL('/jobs/add/')">
+		</div>
+	</form>
+{% endif %}
+{% render_leet_table leet_table %}
+{% endblock %}

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>View Server Link: {{server_to_view.server_name}}</h3>
+<form><input type="button" value="Edit" onClick="goToURL('/serverlinks/edit/{{ server_to_view.id }}/')"> <input type="button" value="Refresh" onClick="goToURL('/serverlinks/view/{{ server_to_view.id }}/')"></form>
+<table>
+	<tr><td>Server Link Name:</td><td><b>{{server_to_view.server_name}}</b></td></tr>
+	<tr>
+		<td>Status:</td>
+		<td>
+			{% if not server_to_view.enabled %}
+				Server Link Disabled.
+			{% else %}
+				{% if not server_to_view.status %}
+					<img src="/media/xsftp/icon-yes.gif" alt="Healthy" /> Healthy
+				{% else %}
+					<img src="/media/xsftp/icon-no.gif" alt="Unhealthy" /> Unhealthy
+					<br/><br/>
+					{{ server_to_view.healthStrings|safe }}
+				{% endif %}
+			{% endif %}	
+		</td>
+	</tr>
+	<tr>
+		<td>Server Link Type:</td>
+		<td>
+			{% ifequal server_to_view.type "sftp" %}
+				<b>SFTP (SSH File Transfer Protocol)</b>
+			{% else %}
+				{% ifequal server_to_view.type "cifs" %}
+					<b>CIFS (Windows Share)</b>
+				{% else %}
+					<b>FTP (File Transfer Protocol)</b>
+				{% endifequal %}
+			{% endifequal %}
+		</td>
+	</tr>
+	{% ifequal server_to_view.type "ftp" %}
+		<tr>
+			<td>
+				FTP Passive Mode:
+			</td>
+			<td>
+				{% if server_to_view.ftp_passive %}
+					Yes
+				{% else %}
+					No
+				{% endif %}
+			</td>
+		</tr>
+		<tr>
+			<td>
+				FTP Encryption:
+			</td>
+			<td>
+				{% if server_to_view.ftp_ssl %}
+					{% if server_to_view.ftp_ssl_implicit %}
+						FTPS (Implicit FTP/SSL)
+					{% else %}
+						FTPES (Explicit FTP/SSL)
+					{% endif %}
+				{% else %}
+					None (Standard FTP)
+				{% endif %}
+			</td>
+		</tr>
+	{% endifequal %}
+	<tr><td>Last Checked:</td><td>{{server_to_view.time_last_checked}}</td></tr>
+	<tr><td>Last Seen Healthy:</td><td>{{server_to_view.timeLastSeenHealthy}}</td></tr>
+	<tr><td>First Seen In Current Status:</td><td>{{server_to_view.timeFirstSeenInCurrentState}}</td></tr>
+	<tr><td>Enabled:</td>
+		<td>
+			{% ifequal server_to_view.enabled 1 %}
+				<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+			{% else %}
+				<img src="/media/xsftp/icon-no.gif" alt="no" />
+			{% endifequal %}
+		</td>
+	</tr>
+	{% ifequal server_to_view.type "sftp" %}
+		<tr>
+			<td>Fingerprint (Identity):</td>
+			<td>
+				{% if not server_to_view.key_fingerprint %}
+					Unknown
+				{% else %}
+					{{server_to_view.key_fingerprint}}
+				{% endif %}
+			</td>
+		</tr>
+	{% endifequal %}
+	<tr><td>Comment:</td><td>{{server_to_view.comment}}</td></tr>
+	<tr><td>Created:</td><td>{{server_to_view.created}}</td></tr>
+	<tr>
+		<td>Address</td>
+		<td>
+			{% ifequal server_to_view.type "sftp" %}
+				{{server_to_view.address}}:{{server_to_view.port}}
+			{% else %}
+				{% ifequal server_to_view.type "cifs" %}
+					{{server_to_view.address}}:{{server_to_view.cifs_port}}
+				{% else %}
+					{{server_to_view.address}}:{{server_to_view.ftp_port}}
+				{% endifequal %}
+			{% endifequal %}
+		</td>
+	</tr>
+	<tr><td>Remote User:</td><td>{{server_to_view.remote_user}}</td></tr>
+	{% ifequal server_to_view.type "cifs" %}
+		<tr>
+			<td>Share Name:</td>
+			<td>
+				{{server_to_view.cifs_share}}
+			</td>
+		</tr>
+	{% endifequal %}
+	<tr><td>Remote Path:</td><td>{% if server_to_view.remote_path %}{{server_to_view.remote_path}}{%else%}{% endif %}</td></tr>
+
+	<tr><th>Read-Only Users:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td></tr>
+				{% for user in server_to_view.read_users.all %}
+					<tr>
+						<td><a href="/users/view/{{ user.id }}/">{{ user.username }}</a></td>
+						<td>{{user.first_name}}</td>
+						<td>{{user.last_name}}</td>
+						<td>
+							{% ifequal user.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" />
+							{% endifequal %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+
+	<tr	><th>Read/Write Users:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td></tr>
+				{% for writeUser in server_to_view.write_users.all %}
+					<tr>
+						<td><a href="/users/view/{{ writeUser.id }}/">{{ writeUser.username }}</a></td>
+						<td>{{writeUser.first_name}}</td>
+						<td>{{writeUser.last_name}}</td>
+						<td>
+							{% ifequal writeUser.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" />
+							{% endifequal %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+
+	<tr	><th>Read-Only Groups:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for readGroup in server_to_view.read_groups.all %}
+					<tr>
+						<td><a href="/groups/view/{{ readGroup.id }}/">{{ readGroup.group_name }}</a>
+						<td>{{ readGroup.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+
+	<tr	><th>Read/Write Groups:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for writeGroup in server_to_view.write_groups.all %}
+					<tr>
+						<td><a href="/groups/view/{{ writeGroup.id }}/">{{ writeGroup.group_name }}</a>
+						<td>{{ writeGroup.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+
+	<tr><th>Effective User Permissions:</th>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td><td>Effective Permission</td><td>Read Granted Via:</td><td>Write Granted Via:</td></tr>
+				{% for uinfo in associated_users %} 
+					<tr>
+						<td><a href="/users/view/{{ uinfo.0.id }}/">{{ uinfo.0.username }}</a></td>
+						<td>{{uinfo.0.first_name}}</td>
+						<td>{{uinfo.0.last_name}}</td>
+						<td>
+							{% ifequal uinfo.0.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" />
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" />
+							{% endifequal %}
+						</td>
+						<td>
+							{% for user in effective_write_users %}
+								{% ifequal uinfo.0 user%}
+									{% ifequal uinfo.1 1 %}
+										<img src="/media/xsftp/icon_alert.gif" alt="Warning" />
+									{% endifequal%}
+									{% ifequal uinfo.1 3 %}
+										<img src="/media/xsftp/icon_alert.gif" alt="Warning" />
+									{% endifequal%}
+								{% endifequal%}
+							{% endfor %}
+							{% ifequal uinfo.2 1 %}
+							Read-Only
+							{% else %}
+							Read/Write
+							{% endifequal %}
+
+						</td>
+						<td>
+							{% ifequal uinfo.1 1 %}
+								<i>explicit</i><br>
+							{% endifequal%}
+							{% ifequal uinfo.1 3 %}
+								<i>explicit</i><br>
+							{% endifequal%}
+							{% for readGroupObj in uinfo.3.0 %}
+							<a href="/groups/view/{{ readGroupObj.id }}/">{{ readGroupObj.group_name  }}</a><br>
+							{% endfor %}
+						</td>
+						<td>
+							{% ifequal uinfo.1 2 %}
+								<i>explicit</i><br>
+							{% endifequal%}
+							{% ifequal uinfo.1 3 %}
+								<i>explicit</i><br>
+							{% endifequal%}
+							{% for writeGroupObj in uinfo.3.1 %}
+							<a href="/groups/view/{{ writeGroupObj.id }}/">{{ writeGroupObj.group_name }}</a><br>
+							{% endfor %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+</table>
+{% endblock %}

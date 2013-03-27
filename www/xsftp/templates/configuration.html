@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>System Configuration</h3>
+<form><input type="button" value="Edit" onClick="goToURL('/configuration/edit/')"></form>
+<table>
+	<tr><td>Device Name:</td><td>{{config.get_device_name}}</td></tr>
+	<tr><td>IP Address:</td><td>{{config.ip_address}}</td></tr>
+	<tr><td>Subnet Mask:</td><td>{{config.subnet_mask}}</td></tr>
+	<tr><td>Default Gateway:</td><td>{%if config.default_gateway%}{{config.default_gateway}}{%else%}None{%endif%}</td></tr>
+	<tr><td>Primary DNS:</td><td>{%if config.primary_dns%}{{config.primary_dns}}{%else%}None{%endif%}</td></tr>
+	<tr><td>Secondary DNS:</td><td>{%if config.secondary_dns%}{{config.secondary_dns}}{%else%}None{%endif%}</td></tr>
+	<tr><td>Enforce Password Complexity:</td><td>{%if config.password_complexity%}Yes{%else%}No{%endif%}</td></tr>
+	<tr><td>RADIUS Server:</td><td>{%if config.radius_server%}{{config.radius_server}}{%else%}None{%endif%}</td></tr>
+	<tr><td>RADIUS Auth Port:</td><td>{%if config.radius_server%}{{config.radius_authport}}{%else%}N/A{%endif%}</td></tr>
+	<tr><td>SMTP Server:</td><td>{%if config.smtp_server%}{{config.smtp_server}}:{{config.smtp_port}} {%else%}None{%endif%}</td></tr>
+	<tr><td>Global 'From' Email Address:</td><td>{%if config.smtp_from_address%}{{config.smtp_from_address}}{%else%}admin@{{config.ip_address}}{%endif%}</td></tr>
+	<tr><td>Remote Syslog Server:</td><td>{%if config.remote_syslog_server%}{{config.remote_syslog_server}}{%else%}None{%endif%}</td></tr>
+	<tr><td>Server Link Health Global Alert Groups:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for group in config.serverlink_alert_groups.all %}
+					<tr>
+						<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a>
+						<td>{{ group.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	<tr><td>Job Success Global Alert Groups:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for group in config.job_success_alert_groups.all %}
+					<tr>
+						<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a>
+						<td>{{ group.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	<tr><td>Job Failure Global Alert Groups:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for group in config.job_failure_alert_groups.all %}
+					<tr>
+						<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a>
+						<td>{{ group.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+</table>
+<br />
+<h3>System Tools</h3>
+<div><a href="/configuration/getpublickey/ssh2/"><img style="vertical-align:middle; padding:1px;" border="0" alt="Download Global Server Link Public Key" src="/media/xsftp/key_gold.png" width="32" height="32" />Download the <u>SSH-2 formatted</u> Global Server Link Public Key</a></div>
+<div><a href="/configuration/getpublickey/rfc4716/"><img style="vertical-align:middle; padding:1px;" border="0" alt="Download Global Server Link Public Key" src="/media/xsftp/key_silver.png" width="32" height="32" />Download the <u>RFC 4716 formatted</u> Global Server Link Public Key</a></div>
+<div><a href="/configuration/testmail/"><img style="vertical-align:middle; padding:1px;" border="0" alt="Send Test Email" src="/media/xsftp/mail_send.png" width="32" height="32" />Send a test email to yourself</a></div>
+<div><a href="/configuration/testsyslog/"><img style="vertical-align:middle; padding:1px;" border="0" alt="Send Test Syslog Message to Remote Syslog Server" src="/media/xsftp/testlog.png" width="32" height="32" />Send a test message to the remote Syslog server</a></div>
+<div><a href="/configuration/restart/"><img style="vertical-align:middle; padding:1px;" border="0" alt="System Restart" src="/media/xsftp/restart.png" width="32" height="32" />Restart this Fcombine appliance</a></div>
+{% endblock %}

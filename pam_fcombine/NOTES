@@ -1,0 +1,170 @@
+
+#########################################################################
+# THE clone() AND AS_LIMIT RELATED ERRORS
+#########################################################################
+
+
+VSFTPD can go stick it's appendage in a blender.  This bug took *DAYS*
+to debug.  Basically VSFTP does two things:
+
+1. It uses CLONE_NEWNET on some versions (patched in SL6.2)
+
+ VSFTPD calls clone() with the CLONE_NEWNET param, meaning any network
+ stuff we set up will fail.  This parameter basically tells clone()
+ to set up a new networking namespace.  It's used for security reasons.
+ If a child process gets buffer overflowed or something, the theory is
+ that the compromised process won't be able to send any packets. The
+ problem is that many PAM modules need to send packets!!!!!!
+ 
+ This can be worked around with the following vsftpd.conf params:
+
+ isolate=NO
+ isolate_network=NO
+
+ this will make it clone() without CLONE_NEWNET or fork()
+ (depending on what version)
+
+2. It sets a stupid 100MB limit on the memory of it's child processes
+
+ This is yet another security "feature".  Pity it screws up any
+ PAM modules that are vaguely complicated.
+
+ VSFTPD calls setrlimit to limit the amount of memory its childs
+ can use.  When you try to log into VSFTPD, it calls setrlimit
+ and then clone()s or fork()s the process.  It calls PAM at this stage
+ to do authentication.
+
+ The first thing PAM does is read /etc/pam.d/vsftpd and opens all
+ the pam_*.so files with dlopen, with RTLD_NOW, meaning that
+ all the undefined symbols are resolved, and all the libraries
+ associated with that PAM module are loaded into memory.
+
+ In our case, about 20 shared libraries are opened.  Keeping these
+ files open and then mmap()ing their contents uses approximately
+ 3MB per library.  When tested, about 60MB was consumed just
+ by loading pam_fcombine.so.
+
+ As VSFTPD sets a limit of 100MB as of 2.3.4, you can see that
+ between the process doing the FTP protocol work and a few PAM
+ modules, the 100MB is consumed very quickly.  In fact,
+ there are some reports of pam_ldap failing due to this.
+
+ In Fedora 16, the AS_LIMIT has been raised to 200MB but this
+ still doesn't seem to be enough.
+
+ The most inidious thing about this limitation is that it manifests
+ itself in very strange ways.  Programs that are not catching
+ mmap problems properly fail in very undefined ways.  This applies
+ for pam_ldap, pam_python and of course the associated libraries
+ we use for pam_fcombine.
+
+ The error we most commonly get when hitting the memory limit is:
+
+ XML-RPC Fault libcurl failed to execute the HTTP POST transaction,
+ explaining:  Could not resolve host: (nil); Unknown error (-504)
+
+ We have also seen this error (even though the cert is fine):
+
+ XML-RPC Fault libcurl failed to execute the HTTP POST transaction.
+ Problem with the SSL CA cert (path? access rights?) (-504)
+
+ So what was the workaround for this problem?  There's a little known
+ "constructor" for Linux shared libraries.  It is called as part of the
+ dlopen() system call if exported in our pam_fcombine.so library.
+ We use this opportunity to actually call setrlimit and fix the stupid
+ limitations.  We need to do it at this stage as if we leave it to run-time,
+ it's too late.  All the dlopen()s on the various PAM modules will exhaust
+ the memory before pam_sm_authenticate is even called.
+
+ We limit this behaviour by using a glibc extension that passes in the
+ calling process's name.  If it matches the string "vsftpd", we invoke
+ our workaround.
+
+ There's also another potential workaround if this stops working in the
+ future.  We could simply not link to the XMLRPC library and simply
+ call dlopen ourselves and call the shared libraries at run time.
+ This allows us to call setrlimit before we consume lots of memory.
+
+
+#########################################################################
+# THE priv_sock_get_result ERROR / SUCCESSFUL AUTH WITH SEGFAULT
+#########################################################################
+
+We were getting undefined behaviour at one point because of a mistake we
+made with the glibc syslog implementation (and probably any other syslog
+implementation).  Basically the program would authenticate users just fine
+and then we'd get something like this:
+
+[root@cartwheel pam_fcombine]# ftp localhost
+Trying ::1...
+ftp: connect to address ::1Connection refused
+Trying 127.0.0.1...
+Connected to localhost (127.0.0.1).
+220 (vsFTPd 2.2.2)
+Name (localhost:root): dirk
+331 Please specify the password.
+Password:
+Login failed. 
+421 Service not available, remote server has closed connection 
+500 OOPS: priv_sock_get_result
+ftp>
+
+When looking at the logs, we could see the following segfault occuring:
+
+Jun 20 11:57:06 cartwheel kernel: vsftpd[8366]: segfault at 7f5ae0887f60 ip
+00007f5ae2d22e21 sp 00007fffc5a0e028 error 4 in libc-2.12.so[7f5ae2ca3000+186000]
+
+So the problem was either in VSFTPD or our pam_fcombine library.  The PID and
+strace indicated that it was the child that was responsible for doing PAM
+authentication.  The segmentation fault would occur just after all our mmap()ed
+files were being munmap()ed:
+.
+.
+.
+[pid  8398] munmap(0x7f5adcb23000, 2105440) = 0
+[pid  8398] munmap(0x7f5adc921000, 2101288) = 0
+[pid  8398] munmap(0x7f5adc71e000, 2105480) = 0
+[pid  8398] munmap(0x7f5adc519000, 2113840) = 0
+[pid  8398] --- SIGSEGV (Segmentation fault) @ 0 (0) ---
+Process 8398 detached
+[pid  8399] <... read resumed> "", 1)   = 0
+
+The initial theory was that it was the CentALT repository's version of VSFTPD.
+Then something clicked.  We noticed that the syslog messages would be coming from
+the ident "vsftpd" one minute and then "pam_fcombine" the next (after the fork()
+or clone()).  We then looked at the glibc source in misc/syslog.c to look at
+the implementation, to see whether it was succeptible to clone()s or fork()s.
+There's a global variable called "LogTag" that contains the "ident" variable
+passed in through openlog().
+
+At this stage it was theorized that our process was setting either LogTag or 
+replacing the file descriptor in LogFile and then pissing off, leaving a
+pointer to a string that no longer exists or a closed FD.  So what happens when
+you attempt to access memory that may or may not be initialized and that you
+may or may not be allowed to access? SEGFAULTs.
+
+openlog() was removed as syslog will happily initialize itself if it's hasn't
+already done so under the hood.  pam_fcombine took the vsftpd identity and spat
+out its messages, while getting rid of the 500 OOPS error.  YAY!
+
+Finally, Google gave the last piece of the clue:
+
+http://www.gnu.org/software/libc/manual/html_node/openlog.html
+
+I quote:
+
+In particular, if you are writing code for a shared library that might get loaded
+and then unloaded (e.g. a PAM module), and you use openlog, you must call closelog
+before any point where your library might get unloaded, as in this example:
+
+.....
+
+Without the call to closelog, future invocations of syslog by the program using the
+shared library may crash, if the library gets unloaded and the memory containing
+the string [whatever] becomes unmapped.  This is a limitation of the BSD syslog
+interface.
+
+So finally, to revert to the desired behaviour, openlog was uncommented and a
+closelog was added.  We then observed epic winrar.
+
+

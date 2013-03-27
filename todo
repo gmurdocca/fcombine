@@ -1,0 +1,45 @@
+Authentication System
+=====================
+
+Frontend:
+---------
+- Create a nav option called Authentication, in which new Authenticators can be
+  created.
+- Hard coded Authenticator exists called "Local", and allow addition of new ones
+  via an Add button
+- New Authenticators can be: RADUS or LDAP
+- New RADUS Authenticator form:
+    Radius Server:...
+    Radius Auth Port:...
+    Radius Secret:...
+    Directory Service: [none, CSV, LDAP]
+        None:   No directory service (no user details will be synced)
+        Script: Specify location of a CSV (located on local FS or on a Server
+                Link).
+        LDAP:   Specify LDAP details
+        * For CSV and LDAP options, specify duration wait between syncs
+- New LDAP Authenticator form:
+    LDAP Server details:...(host, port, search string, etc)
+    Directory Service: [none, CSV, As Above]
+        None:   No directory service (no user details will be synced)
+        Script: Specify location of a CSV (located on local FS or on a Server
+                Link).
+        As Above: Use same LDAP server details as specified above
+- The immutable "Local" authenticator can only be edited. In it, provide option
+  to specify the directory service from which local user details can be synced,
+  namely: [None, LDAP, CSV]
+    None (Local Only): No directory service (no user details will be automatically synced,
+          manual data entry only for local users)
+    LDAP: Specify LDAP details
+    CSV: Specify location of a CSV (located on local FS or on a Server
+         Link).
+- The behaviour of the directory service sync (duration, merge, overwrite, skip, remove orphans) will
+  be made available as options where necessary.
+
+Backend:
+--------
+
+- Split out DirectoryServer object and Authenticator oject. Link them as
+  necessary in implementing the above.
+- Create an LDAPServer object that can be linked to any authenticator or to an
+  LDAPAuthenticator or LDAPDirectoryServer

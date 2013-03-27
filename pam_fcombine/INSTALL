@@ -1,0 +1,22 @@
+pam_fcombine
+============
+
+Requirements
+------------
+
+  xmlrpc-c
+  pam
+
+
+Installing
+----------
+
+  To build you require libpam and xmlrpc-c development files.
+  The command to build the entire system is:
+
+    make
+
+  To install:
+
+    make install
+

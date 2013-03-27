@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Edit Profile</h3>
+<form method="POST" action="/myprofile/edit/">
+	<table>
+		{{ edit_profile_form.as_table }}
+	</table>
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+<script type="text/javascript">
+	document.getElementById('id_first_name').focus()
+</script>
+{% endblock %}

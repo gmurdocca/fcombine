@@ -1,0 +1,294 @@
+--- scp.c.orig	2010-02-17 07:24:38.000000000 +1100
++++ scp.c	2010-12-09 18:25:07.000000000 +1100
+@@ -103,6 +103,7 @@
+ #include <string.h>
+ #include <time.h>
+ #include <unistd.h>
++#include <syslog.h>
+ #if defined(HAVE_STRNVIS) && defined(HAVE_VIS_H)
+ #include <vis.h>
+ #endif
+@@ -281,6 +282,7 @@
+ uid_t userid;
+ int errs, remin, remout;
+ int pflag, iamremote, iamrecursive, targetshouldbedirectory;
++char *client_addr = NULL;
+ 
+ #define	CMDNEEDS	64
+ char cmd[CMDNEEDS];		/* must hold "rcp -r -p -d\0" */
+@@ -293,6 +295,7 @@
+ void toremote(char *, int, char *[]);
+ size_t scpio(ssize_t (*)(int, void *, size_t), int, void *, size_t, off_t *);
+ void usage(void);
++void plogit(const char *fmt,...);
+ 
+ int
+ main(int argc, char **argv)
+@@ -302,10 +305,12 @@
+ 	char *targ, *endp, **newargv;
+ 	extern char *optarg;
+ 	extern int optind;
++	char *cp;
+ 
+ 	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */
+ 	sanitise_stdfd();
+ 
++	openlog("scp", LOG_PID, LOG_LOCAL1);
+ 	/* Copy argv, because we modify it */
+ 	newargv = xcalloc(MAX(argc + 1, 1), sizeof(*newargv));
+ 	for (n = 0; n < argc; n++)
+@@ -396,6 +401,35 @@
+ 	if (!isatty(STDOUT_FILENO))
+ 		showprogress = 0;
+ 
++	/* Get Client Address*/
++	if ((cp = getenv("SSH_CONNECTION")) != NULL)
++	{
++		client_addr = xstrdup(cp);
++		if ((cp = strchr(client_addr, ' ')) == NULL)
++		{
++			run_err("Malformed SSH_CONNECTION variable: \"%s\"", getenv("SSH_CONNECTION"));
++			exit(1);
++		}
++		*cp = '\0';
++	}
++	else
++		client_addr = xstrdup("UNKNOWN");
++
++	plogit("User connected");
++	uid_t euid, ruid, suid;
++    getresuid(&ruid, &euid, &suid);
++    if (chroot("xsftp") != 0){
++		plogit("chroot error: %s", strerror(errno));
++		fprintf(stderr, "chroot error: %s\n", strerror(errno));
++		exit(1);
++	}
++    if (chdir("/") != 0){
++		plogit("chdir error: %s", strerror(errno));
++		fprintf(stderr, "chdir error: %s\n", strerror(errno));
++		exit(1);
++	}
++    setresuid(ruid, ruid, ruid);
++
+ 	remin = STDIN_FILENO;
+ 	remout = STDOUT_FILENO;
+ 
+@@ -637,6 +671,7 @@
+ 
+ 	for (indx = 0; indx < argc; ++indx) {
+ 		name = argv[indx];
++		plogit("sending file '%s'", name);
+ 		statbytes = 0;
+ 		len = strlen(name);
+ 		while (len > 1 && name[len-1] == '/')
+@@ -648,10 +683,12 @@
+ 			name = encname;
+ 		}
+ 		if (fstat(fd, &stb) < 0) {
+-syserr:			run_err("%s: %s", name, strerror(errno));
++syserr:			plogit("%s: %s", name, strerror(errno));
++			run_err("%s: %s", name, strerror(errno));
+ 			goto next;
+ 		}
+ 		if (stb.st_size < 0) {
++			plogit("%s: %s", name, "Negative file size");
+ 			run_err("%s: %s", name, "Negative file size");
+ 			goto next;
+ 		}
+@@ -666,6 +703,7 @@
+ 			}
+ 			/* FALLTHROUGH */
+ 		default:
++			plogit("%s: not a regular file", name);
+ 			run_err("%s: not a regular file", name);
+ 			goto next;
+ 		}
+@@ -741,7 +779,10 @@
+ 		if (!haderr)
+ 			(void) atomicio(vwrite, remout, "", 1);
+ 		else
++		{
++			plogit("%s: %s", name, strerror(haderr));
+ 			run_err("%s: %s", name, strerror(haderr));
++		}
+ 		(void) response();
+ 	}
+ }
+@@ -754,6 +795,7 @@
+ 	char *last, *vect[1], path[1100];
+ 
+ 	if (!(dirp = opendir(name))) {
++		plogit("%s: %s", name, strerror(errno));
+ 		run_err("%s: %s", name, strerror(errno));
+ 		return;
+ 	}
+@@ -787,6 +829,7 @@
+ 		if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
+ 			continue;
+ 		if (strlen(name) + 1 + strlen(dp->d_name) >= sizeof(path) - 1) {
++			plogit("%s/%s: name too long", name, dp->d_name);
+ 			run_err("%s/%s: name too long", name, dp->d_name);
+ 			continue;
+ 		}
+@@ -880,10 +923,12 @@
+ 	if (!pflag)
+ 		(void) umask(mask);
+ 	if (argc != 1) {
++		plogit("ambiguous target");
+ 		run_err("ambiguous target");
+ 		exit(1);
+ 	}
+ 	targ = *argv;
++	plogit("copying to %s", targ);
+ 	if (targetshouldbedirectory)
+ 		verifydir(targ);
+ 
+@@ -949,6 +994,7 @@
+ 			 * followed.
+ 			 */
+ 			if (first) {
++				plogit("%s", cp);
+ 				run_err("%s", cp);
+ 				exit(1);
+ 			}
+@@ -968,6 +1014,7 @@
+ 		if (*cp++ != ' ')
+ 			SCREWUP("size not delimited");
+ 		if ((strchr(cp, '/') != NULL) || (strcmp(cp, "..") == 0)) {
++			plogit("error: unexpected filename: %s", cp);
+ 			run_err("error: unexpected filename: %s", cp);
+ 			exit(1);
+ 		}
+@@ -990,6 +1037,7 @@
+ 			np = targ;
+ 		curfile = cp;
+ 		exists = stat(np, &stb) == 0;
++		plogit("receiving: %s", np);
+ 		if (buf[0] == 'D') {
+ 			int mod_flag = pflag;
+ 			if (!iamrecursive)
+@@ -1013,8 +1061,12 @@
+ 			if (setimes) {
+ 				setimes = 0;
+ 				if (utimes(vect[0], tv) < 0)
++				{
++					plogit("%s: set times: %s",
++					    vect[0], strerror(errno));
+ 					run_err("%s: set times: %s",
+ 					    vect[0], strerror(errno));
++				}
+ 			}
+ 			if (mod_flag)
+ 				(void) chmod(vect[0], mode);
+@@ -1025,7 +1077,8 @@
+ 		omode = mode;
+ 		mode |= S_IWRITE;
+ 		if ((ofd = open(np, O_WRONLY|O_CREAT, mode)) < 0) {
+-bad:			run_err("%s: %s", np, strerror(errno));
++bad:			plogit("%s: %s", np, strerror(errno));
++			run_err("%s: %s", np, strerror(errno));
+ 			continue;
+ 		}
+ 		(void) atomicio(vwrite, remout, "", 1);
+@@ -1048,6 +1101,9 @@
+ 			do {
+ 				j = scpio(read, remin, cp, amt, &statbytes);
+ 				if (j == 0) {
++					plogit("%s", j != EPIPE ?
++					    strerror(errno) :
++					    "dropped connection");
+ 					run_err("%s", j != EPIPE ?
+ 					    strerror(errno) :
+ 					    "dropped connection");
+@@ -1080,6 +1136,7 @@
+ 		}
+ 		if (wrerr == NO && (!exists || S_ISREG(stb.st_mode)) &&
+ 		    ftruncate(ofd, size) != 0) {
++			plogit("%s: truncate: %s", np, strerror(errno));
+ 			run_err("%s: truncate: %s", np, strerror(errno));
+ 			wrerr = DISPLAYED;
+ 		}
+@@ -1090,6 +1147,8 @@
+ #else /* HAVE_FCHMOD */
+ 				if (chmod(np, omode)) {
+ #endif /* HAVE_FCHMOD */
++					plogit("%s: set mode: %s",
++					    np, strerror(errno));
+ 					run_err("%s: set mode: %s",
+ 					    np, strerror(errno));
+ 					wrerr = DISPLAYED;
+@@ -1101,6 +1160,8 @@
+ #else /* HAVE_FCHMOD */
+ 				if (chmod(np, omode & ~mask)) {
+ #endif /* HAVE_FCHMOD */
++					plogit("%s: set mode: %s",
++					    np, strerror(errno));
+ 					run_err("%s: set mode: %s",
+ 					    np, strerror(errno));
+ 					wrerr = DISPLAYED;
+@@ -1114,6 +1175,8 @@
+ 		if (setimes && wrerr == NO) {
+ 			setimes = 0;
+ 			if (utimes(np, tv) < 0) {
++				plogit("%s: set times: %s",
++				    np, strerror(errno));
+ 				run_err("%s: set times: %s",
+ 				    np, strerror(errno));
+ 				wrerr = DISPLAYED;
+@@ -1121,6 +1184,7 @@
+ 		}
+ 		switch (wrerr) {
+ 		case YES:
++			plogit("%s: %s", np, strerror(wrerrno));
+ 			run_err("%s: %s", np, strerror(wrerrno));
+ 			break;
+ 		case NO:
+@@ -1131,6 +1195,7 @@
+ 		}
+ 	}
+ screwup:
++	plogit("protocol error: %s", why);
+ 	run_err("protocol error: %s", why);
+ 	exit(1);
+ }
+@@ -1204,6 +1269,24 @@
+ }
+ 
+ void
++plogit (const char* fmt, ...)
++{
++   va_list args;
++   char *fmt2;
++
++   fmt2 = xmalloc(64 + 1 + 255 + 2 + strlen(fmt) + 1); // username + @ + source_address + ": " + length_of_original_format_string + '\0'
++   fmt2 = strcpy(fmt2, pwd->pw_name);
++   fmt2 = strcat(fmt2, "@");
++   fmt2 = strcat(fmt2, client_addr);
++   fmt2 = strcat(fmt2, ": ");
++   fmt2 = strcat(fmt2, fmt);
++   va_start(args, fmt);
++   vsyslog(LOG_INFO, fmt2, args);
++   va_end(args);
++   xfree(fmt2);
++}
++
++void
+ verifydir(char *cp)
+ {
+ 	struct stat stb;
+@@ -1213,6 +1296,7 @@
+ 			return;
+ 		errno = ENOTDIR;
+ 	}
++	plogit("%s: %s", cp, strerror(errno));
+ 	run_err("%s: %s", cp, strerror(errno));
+ 	killchild(0);
+ }
+@@ -1255,6 +1339,7 @@
+ 	struct stat stb;
+ 
+ 	if (fstat(fd, &stb) < 0) {
++		plogit("fstat: %s", strerror(errno));
+ 		run_err("fstat: %s", strerror(errno));
+ 		return (0);
+ 	}

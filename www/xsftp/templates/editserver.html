@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<script type="text/javascript" src="/media/xsftp/js/SelectBox.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/SelectFilter2.js"></script>
+<script type="text/javascript" src="/media/xsftp/js/serverlink.js"></script>
+<h3>Edit Server Link: {{server_to_edit.server_name}}</h3>
+<form method="POST" action="/serverlinks/edit/{{ server_to_edit.id }}/">
+	<table>
+		{{ edit_server_form.as_table }}
+	</table>
+	<input type="submit" name="button" value="Save">
+	<input type="submit" name= "button" value="Cancel">
+</form>
+<script type="text/javascript">
+	document.getElementById('id_server_name').focus()
+	addEvent(window, "load", function(e) { SelectFilter.init("id_read_users", "Users", 0, "/media/"); });
+	addEvent(window, "load", function(e) { SelectFilter.init("id_write_users", "Users", 0, "/media/"); });
+	addEvent(window, "load", function(e) { SelectFilter.init("id_read_groups", "Groups", 0, "/media/"); });
+	addEvent(window, "load", function(e) { SelectFilter.init("id_write_groups", "Groups", 0, "/media/"); });
+	showType();
+</script>
+
+{% endblock %}

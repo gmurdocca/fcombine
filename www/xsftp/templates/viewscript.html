@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Details for Script '{{ script_to_view|escape }}'</h3>
+<form><input type="button" value="Edit" onClick="goToURL('/scripts/edit/{{ script_to_view.id }}/')"></form>
+<table>
+	<tr><td>Script Name:</td><td>{{script_to_view.script_name}}</td></tr>
+	<tr><td>Comment:</td><td>{{script_to_view.comment}}</td></tr>
+	<tr><td>File Name:</td><td><a href="/scripts/get/{{script_to_view.id}}/">{{script_to_view.get_basename}}</a></td></tr>
+	<tr><td>Users with Exec Permission:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td></tr>
+				{% for user in exec_users %}
+					<tr>
+						<td><a href="/users/view/{{ user.id }}/">{{ user.username }}</a></td>
+						<td>{{user.first_name}}</td>
+						<td>{{user.last_name}}</td>
+						<td>
+							{% ifequal user.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" >
+							{% endifequal %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	<tr><td>Groups with Exec Permission:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Group Name</td><td>Comment</td></tr>
+				{% for group in exec_groups %}
+					<tr>
+						<td><a href="/groups/view/{{ group.id }}/">{{ group.group_name }}</a>
+						<td>{{ group.comment }}</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+	<tr><td>Effective Users with Exec Permission:</td>
+		<td>
+			<table>
+				<tr class="alt"><td>Username</td><td>First Name</td><td>Last name</td><td>Enabled</td><td>Granted Via</td></tr>
+				{% for uinfo in associated_users %}
+					<tr>
+						<td><a href="/users/view/{{ uinfo.0.id }}/">{{ uinfo.0.username }}</a></td>
+						<td>{{uinfo.0.first_name}}</td>
+						<td>{{uinfo.0.last_name}}</td>
+						<td>
+							{% ifequal uinfo.0.is_active 1 %}
+								<img src="/media/xsftp/icon-yes.gif" alt="yes" >
+							{% else %}
+								<img src="/media/xsftp/icon-no.gif" alt="no" >
+							{% endifequal %}
+						</td>
+						<td>
+							{% ifequal uinfo.1 1 %}
+								<i>explicit</i><br>
+							{% endifequal%}
+							{% for execGroupObj in uinfo.2 %}
+							<a href="/groups/view/{{ execGroupObj.id }}/">{{ execGroupObj.group_name }}</a><br>
+							{% endfor %}
+						</td>
+					</tr>
+				{% endfor %}
+			</table>
+		</td>
+	</tr>
+</table>
+{% endblock %}

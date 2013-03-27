@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block maincontent %}
+<h3>Password Change</h3>
+<p>Please enter a new password for user {% if user_to_change.get_full_name %}{{ user_to_change.get_full_name }}{% else %}{{ user_to_change.username }}{% endif %}.</p>
+<form method="POST" action="/users/changepassword/{{ user_to_change.id }}/">
+	<table>
+		{{ myform.as_table }}
+	</table>
+	<input type="submit" name="button" value="Apply">
+	<input type="submit" name="button" value="Cancel">
+</form>
+{% endblock %}
+
+
